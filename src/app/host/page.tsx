@@ -8,6 +8,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -37,9 +38,8 @@ type CurrentPlayer = {
 const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
-// 最初は空文字のままでOKです。
-// まずログインして UID を画面表示で確認してから、ここへ入れてください。
-const HOST_UID = "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
+// あなたの host UID
+const HOST_UID = process.env.NEXT_PUBLIC_HOST_UID ?? "";
 
 export default function HostPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -376,6 +376,122 @@ export default function HostPage() {
     }
   };
 
+  const clearAllQueue = async () => {
+    if (isBusy) return;
+
+    if (!isHost) {
+      setMessage("host権限がありません。");
+      return;
+    }
+
+    if (queue.length === 0) {
+      setMessage("待機列は空です。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `待機列 ${queue.length} 人分をすべて削除しますか？`
+    );
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    setMessage("待機列を全削除しています...");
+
+    try {
+      const snapshot = await getDocs(collection(db, "queue"));
+
+      for (const item of snapshot.docs) {
+        await deleteDoc(doc(db, "queue", item.id));
+      }
+
+      setMessage("待機列を全削除しました。");
+    } catch (error: any) {
+      console.error("clearAllQueue error:", error);
+
+      const code = error?.code ?? "unknown";
+      const detail = error?.message ?? "詳細不明";
+
+      setMessage(`待機列全削除失敗: ${code} / ${detail}`);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const resetCurrentPlayerOnly = async () => {
+    if (isBusy) return;
+
+    if (!isHost) {
+      setMessage("host権限がありません。");
+      return;
+    }
+
+    if (!currentPlayer) {
+      setMessage("今プレイ中の人はいません。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `今プレイ中の ${currentPlayer.name} さんを削除しますか？`
+    );
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    setMessage("今プレイ中を削除しています...");
+
+    try {
+      const name = currentPlayer.name;
+      await deleteDoc(doc(db, "status", "currentPlayer"));
+      setMessage(`${name} さんを今プレイ中から削除しました。`);
+    } catch (error: any) {
+      console.error("resetCurrentPlayerOnly error:", error);
+
+      const code = error?.code ?? "unknown";
+      const detail = error?.message ?? "詳細不明";
+
+      setMessage(`今プレイ中削除失敗: ${code} / ${detail}`);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const fullResetSession = async () => {
+    if (isBusy) return;
+
+    if (!isHost) {
+      setMessage("host権限がありません。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "待機列と今プレイ中をすべて初期化しますか？"
+    );
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    setMessage("配信データを全リセットしています...");
+
+    try {
+      const snapshot = await getDocs(collection(db, "queue"));
+
+      for (const item of snapshot.docs) {
+        await deleteDoc(doc(db, "queue", item.id));
+      }
+
+      await deleteDoc(doc(db, "status", "currentPlayer"));
+
+      setMessage("待機列と今プレイ中を全リセットしました。");
+    } catch (error: any) {
+      console.error("fullResetSession error:", error);
+
+      const code = error?.code ?? "unknown";
+      const detail = error?.message ?? "詳細不明";
+
+      setMessage(`全リセット失敗: ${code} / ${detail}`);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <main style={{ padding: 24 }}>
@@ -580,7 +696,7 @@ export default function HostPage() {
         padding: "16px 12px 32px",
       }}
     >
-      <div style={{ maxWidth: 860, margin: "0 auto" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
         <div
           style={{
             backgroundColor: "#ffffff",
@@ -609,7 +725,7 @@ export default function HostPage() {
               lineHeight: 1.6,
             }}
           >
-            順番送り、対戦数加算、待機列管理をここで行います。
+            順番送り、対戦数加算、待機列管理、配信終了時の初期化をここで行います。
           </p>
 
           <div
@@ -858,6 +974,99 @@ export default function HostPage() {
                 終了してクリア
               </button>
             </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: "#ffffff",
+            borderRadius: 20,
+            padding: 18,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            marginBottom: 14,
+            border: "1px solid #fecaca",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: "bold",
+              marginBottom: 8,
+              color: "#991b1b",
+            }}
+          >
+            配信終了時のリセット
+          </div>
+
+          <div
+            style={{
+              fontSize: 13,
+              color: "#7f1d1d",
+              lineHeight: 1.6,
+              marginBottom: 12,
+            }}
+          >
+            配信の終わりに待機列や今プレイ中を初期化するためのボタンです。
+            誤操作防止のため、すべて確認ダイアログが出ます。
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 10,
+            }}
+          >
+            <button
+              onClick={clearAllQueue}
+              disabled={isBusy}
+              style={{
+                padding: "14px 16px",
+                fontSize: 15,
+                fontWeight: "bold",
+                backgroundColor: isBusy ? "#fca5a5" : "#dc2626",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 14,
+                cursor: isBusy ? "default" : "pointer",
+              }}
+            >
+              待機列を全削除
+            </button>
+
+            <button
+              onClick={resetCurrentPlayerOnly}
+              disabled={isBusy}
+              style={{
+                padding: "14px 16px",
+                fontSize: 15,
+                fontWeight: "bold",
+                backgroundColor: isBusy ? "#fdba74" : "#ea580c",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 14,
+                cursor: isBusy ? "default" : "pointer",
+              }}
+            >
+              今プレイ中を削除
+            </button>
+
+            <button
+              onClick={fullResetSession}
+              disabled={isBusy}
+              style={{
+                padding: "14px 16px",
+                fontSize: 15,
+                fontWeight: "bold",
+                backgroundColor: isBusy ? "#fda4af" : "#be123c",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 14,
+                cursor: isBusy ? "default" : "pointer",
+              }}
+            >
+              全リセット
+            </button>
           </div>
         </div>
 

@@ -3,24 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { auth, db } from "../../lib/firebase";
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  setDoc,
-} from "firebase/firestore";
-import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signOut,
   User,
 } from "firebase/auth";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  writeBatch,
+} from "firebase/firestore";
 
 type QueueUser = {
   id: string;
@@ -28,595 +26,720 @@ type QueueUser = {
   createdAt: number;
 };
 
-type CurrentPlayer = {
+type ActivePlayer = {
   name: string;
   startedAt: number;
-  playCount: number;
-  totalBattles: number;
-} | null;
+  joinedTotalBattles: number;
+};
+
+type QueueSettings = {
+  maxActivePlayers: number;
+  maxBattlesPerPlayer: number;
+};
+
+type MessageType = "success" | "error" | "info";
+
+const DEFAULT_SETTINGS: QueueSettings = {
+  maxActivePlayers: 2,
+  maxBattlesPerPlayer: 2,
+};
 
 const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
-// あなたの host UID
-const HOST_UID = process.env.NEXT_PUBLIC_HOST_UID ?? "";
+const normalizeName = (name: string) => name.trim().toLowerCase();
 
 export default function HostPage() {
   const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
   const [queue, setQueue] = useState<QueueUser[]>([]);
+  const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>([]);
+  const [settings, setSettings] = useState<QueueSettings>(DEFAULT_SETTINGS);
+  const [maxActivePlayersInput, setMaxActivePlayersInput] = useState(
+    String(DEFAULT_SETTINGS.maxActivePlayers)
+  );
+  const [maxBattlesInput, setMaxBattlesInput] = useState(
+    String(DEFAULT_SETTINGS.maxBattlesPerPlayer)
+  );
+  const [playerStatsMap, setPlayerStatsMap] = useState<Record<string, number>>(
+    {}
+  );
   const [message, setMessage] = useState("");
-  const [currentPlayer, setCurrentPlayer] = useState<CurrentPlayer>(null);
-  const [isBusy, setIsBusy] = useState(false);
+  const [messageType, setMessageType] = useState<MessageType>("info");
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const isHost = !!user && !!HOST_UID && user.uid === HOST_UID;
+  const hostUid = process.env.NEXT_PUBLIC_HOST_UID ?? "";
+
+  const setStatusMessage = (text: string, type: MessageType = "info") => {
+    setMessage(text);
+    setMessageType(type);
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setAuthLoading(false);
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
     });
 
-    return () => unsubscribe();
+    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+
+    const unsubscribeQueue = onSnapshot(
+      queueQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docItem) => {
+          const raw = docItem.data();
+
+          return {
+            id: docItem.id,
+            name: typeof raw.name === "string" ? raw.name : "",
+            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+          };
+        });
+
+        setQueue(data);
+      },
+      (error) => {
+        console.error("host queue onSnapshot error:", error);
+        setStatusMessage("待機列の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribeActivePlayers = onSnapshot(
+      doc(db, "status", "activePlayers"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setActivePlayers([]);
+          return;
+        }
+
+        const raw = snapshot.data();
+        const playersRaw = Array.isArray(raw.players) ? raw.players : [];
+
+        const players: ActivePlayer[] = playersRaw
+          .map((item) => ({
+            name: typeof item?.name === "string" ? item.name : "",
+            startedAt: typeof item?.startedAt === "number" ? item.startedAt : 0,
+            joinedTotalBattles:
+              typeof item?.joinedTotalBattles === "number"
+                ? item.joinedTotalBattles
+                : 0,
+          }))
+          .filter((item) => item.name.trim() !== "");
+
+        setActivePlayers(players);
+      },
+      (error) => {
+        console.error("host activePlayers onSnapshot error:", error);
+        setStatusMessage("プレイ中情報の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribeSettings = onSnapshot(
+      doc(db, "config", "queueSettings"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSettings(DEFAULT_SETTINGS);
+          setMaxActivePlayersInput(String(DEFAULT_SETTINGS.maxActivePlayers));
+          setMaxBattlesInput(String(DEFAULT_SETTINGS.maxBattlesPerPlayer));
+          return;
+        }
+
+        const raw = snapshot.data();
+
+        const nextSettings: QueueSettings = {
+          maxActivePlayers:
+            typeof raw.maxActivePlayers === "number" &&
+            raw.maxActivePlayers > 0
+              ? raw.maxActivePlayers
+              : DEFAULT_SETTINGS.maxActivePlayers,
+          maxBattlesPerPlayer:
+            typeof raw.maxBattlesPerPlayer === "number" &&
+            raw.maxBattlesPerPlayer > 0
+              ? raw.maxBattlesPerPlayer
+              : DEFAULT_SETTINGS.maxBattlesPerPlayer,
+        };
+
+        setSettings(nextSettings);
+        setMaxActivePlayersInput(String(nextSettings.maxActivePlayers));
+        setMaxBattlesInput(String(nextSettings.maxBattlesPerPlayer));
+      },
+      (error) => {
+        console.error("host queueSettings onSnapshot error:", error);
+        setStatusMessage("設定の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribePlayerStats = onSnapshot(
+      collection(db, "playerStats"),
+      (snapshot) => {
+        const nextMap: Record<string, number> = {};
+
+        snapshot.docs.forEach((docItem) => {
+          const raw = docItem.data();
+          const name = typeof raw.name === "string" ? raw.name : "";
+          const totalBattles =
+            typeof raw.totalBattles === "number" ? raw.totalBattles : 0;
+
+          if (name.trim()) {
+            nextMap[normalizeName(name)] = totalBattles;
+          }
+        });
+
+        setPlayerStatsMap(nextMap);
+      },
+      (error) => {
+        console.error("host playerStats onSnapshot error:", error);
+        setStatusMessage("対戦数の読み込みに失敗しました。", "error");
+      }
+    );
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeQueue();
+      unsubscribeActivePlayers();
+      unsubscribeSettings();
+      unsubscribePlayerStats();
+    };
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      setQueue([]);
-      setCurrentPlayer(null);
-      return;
-    }
+    if (!message) return;
 
-    const q = query(collection(db, "queue"), orderBy("createdAt"));
+    const timer = window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
 
-    const unsubscribeQueue = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((docItem) => {
-        const raw = docItem.data();
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
-        return {
-          id: docItem.id,
-          name: typeof raw.name === "string" ? raw.name : "",
-          createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+  const isHost = !!user && user.uid === hostUid;
+  const hasOpenSlot = activePlayers.length < settings.maxActivePlayers;
+
+  const messageStyle =
+    messageType === "success"
+      ? {
+          backgroundColor: "#dcfce7",
+          color: "#166534",
+        }
+      : messageType === "error"
+      ? {
+          backgroundColor: "#fee2e2",
+          color: "#991b1b",
+        }
+      : {
+          backgroundColor: "#fef3c7",
+          color: "#92400e",
         };
-      });
 
-      setQueue(data);
-    });
+  const getBattleCount = (name: string) => {
+    return playerStatsMap[normalizeName(name)] ?? 0;
+  };
 
-    const currentPlayerRef = doc(db, "status", "currentPlayer");
+  const getCurrentSessionBattles = (player: ActivePlayer) => {
+    const totalBattles = getBattleCount(player.name);
+    const currentSessionBattles = totalBattles - player.joinedTotalBattles;
+    return currentSessionBattles >= 0 ? currentSessionBattles : 0;
+  };
 
-    const unsubscribeCurrent = onSnapshot(currentPlayerRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        setCurrentPlayer(null);
-        return;
-      }
-
-      const raw = snapshot.data();
-
-      setCurrentPlayer({
-        name: typeof raw.name === "string" ? raw.name : "",
-        startedAt: typeof raw.startedAt === "number" ? raw.startedAt : 0,
-        playCount: typeof raw.playCount === "number" ? raw.playCount : 0,
-        totalBattles:
-          typeof raw.totalBattles === "number" ? raw.totalBattles : 0,
-      });
-    });
-
-    return () => {
-      unsubscribeQueue();
-      unsubscribeCurrent();
-    };
-  }, [user]);
-
-  const waitingCount = queue.length;
-
-  const nextUpName = useMemo(() => {
-    if (queue.length === 0) return "待機なし";
-    return queue[0].name;
-  }, [queue]);
-
-  const signInAsHost = async () => {
+  const loginWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      setMessage("");
-    } catch (error: any) {
-      console.error("Google sign-in error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`Googleログイン失敗: ${code} / ${detail}`);
+      setStatusMessage("ログインしました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("Googleログインに失敗しました。", "error");
     }
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
-      setMessage("");
-    } catch (error: any) {
-      console.error("Sign-out error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`ログアウト失敗: ${code} / ${detail}`);
+      setStatusMessage("ログアウトしました。", "info");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("ログアウトに失敗しました。", "error");
     }
   };
 
-  const nextPlayer = async () => {
-    if (isBusy) return;
+  const saveSettings = async () => {
+    if (!isHost || isSavingSettings) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
+    const parsedMaxActivePlayers = Number(maxActivePlayersInput);
+    const parsedMaxBattles = Number(maxBattlesInput);
+
+    if (
+      !Number.isInteger(parsedMaxActivePlayers) ||
+      parsedMaxActivePlayers <= 0
+    ) {
+      setStatusMessage("同時参加人数は 1 以上の整数で入力してください。", "error");
       return;
     }
 
-    if (currentPlayer) {
-      setMessage(
-        "今プレイ中の人がいます。先にクリアするか、最後尾に戻してください。"
-      );
+    if (!Number.isInteger(parsedMaxBattles) || parsedMaxBattles <= 0) {
+      setStatusMessage("最大対戦数は 1 以上の整数で入力してください。", "error");
       return;
     }
 
-    if (queue.length === 0) {
-      setMessage("次の人がいません。");
-      return;
-    }
-
-    setIsBusy(true);
-    setMessage("次の人を開始中...");
+    setIsSavingSettings(true);
 
     try {
-      const first = queue[0];
-      const startedAt = Date.now();
-
-      const statsRef = doc(db, "playerStats", getPlayerStatsId(first.name));
-      const statsSnap = await getDoc(statsRef);
-
-      let totalBattles = 0;
-      if (statsSnap.exists()) {
-        const statsData = statsSnap.data();
-        totalBattles =
-          typeof statsData.totalBattles === "number"
-            ? statsData.totalBattles
-            : 0;
-      }
-
-      await setDoc(doc(db, "status", "currentPlayer"), {
-        name: first.name,
-        startedAt,
-        playCount: 0,
-        totalBattles,
+      await setDoc(doc(db, "config", "queueSettings"), {
+        maxActivePlayers: parsedMaxActivePlayers,
+        maxBattlesPerPlayer: parsedMaxBattles,
+        updatedAt: Date.now(),
       });
 
-      await deleteDoc(doc(db, "queue", first.id));
-
-      setMessage(`${first.name} さんを開始しました。`);
-    } catch (error: any) {
-      console.error("nextPlayer error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`次の人への切り替え失敗: ${code} / ${detail}`);
+      setStatusMessage("設定を保存しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("設定の保存に失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsSavingSettings(false);
     }
   };
 
-  const addBattle = async () => {
-    if (isBusy) return;
+  const syncActivePlayers = async (players: ActivePlayer[]) => {
+    await setDoc(doc(db, "status", "activePlayers"), {
+      players,
+      updatedAt: Date.now(),
+    });
+  };
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
+  const addNextPlayerToActive = async () => {
+    if (!isHost || isProcessing) return;
+
+    if (queue.length === 0) {
+      setStatusMessage("待機列が空です。", "error");
       return;
     }
 
-    if (!currentPlayer) {
-      setMessage("今プレイ中の人がいません。");
+    if (activePlayers.length >= settings.maxActivePlayers) {
+      setStatusMessage(
+        `同時参加人数の上限 ${settings.maxActivePlayers} 人に達しています。`,
+        "error"
+      );
       return;
     }
 
-    setIsBusy(true);
-    setMessage("対戦数を更新中...");
+    const nextUser = queue[0];
+    const normalizedName = normalizeName(nextUser.name);
+
+    const alreadyActive = activePlayers.some(
+      (player) => normalizeName(player.name) === normalizedName
+    );
+
+    if (alreadyActive) {
+      setStatusMessage("その名前はすでにプレイ中です。", "error");
+      return;
+    }
+
+    setIsProcessing(true);
 
     try {
-      const nextPlay = currentPlayer.playCount + 1;
-      const nextTotal = currentPlayer.totalBattles + 1;
+      const batch = writeBatch(db);
+      const totalBattlesAtJoin = getBattleCount(nextUser.name);
 
-      await setDoc(
-        doc(db, "status", "currentPlayer"),
-        {
-          ...currentPlayer,
-          playCount: nextPlay,
-          totalBattles: nextTotal,
-        },
-        { merge: true }
+      batch.delete(doc(db, "queue", nextUser.id));
+      batch.set(doc(db, "status", "activePlayers"), {
+        players: [
+          ...activePlayers,
+          {
+            name: nextUser.name,
+            startedAt: Date.now(),
+            joinedTotalBattles: totalBattlesAtJoin,
+          },
+        ],
+        updatedAt: Date.now(),
+      });
+
+      await batch.commit();
+      setStatusMessage(`${nextUser.name} をプレイ中に追加しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("プレイ中への追加に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const endMatch = async () => {
+    if (!isHost || isProcessing) return;
+
+    if (activePlayers.length === 0) {
+      setStatusMessage("プレイ中の参加者がいません。", "error");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const batch = writeBatch(db);
+
+      const incrementedTotals = activePlayers.map((player) => {
+        const currentTotal = getBattleCount(player.name);
+        const nextTotal = currentTotal + 1;
+
+        batch.set(
+          doc(db, "playerStats", getPlayerStatsId(player.name)),
+          {
+            name: player.name,
+            totalBattles: nextTotal,
+            updatedAt: Date.now(),
+          },
+          { merge: true }
+        );
+
+        return {
+          player,
+          nextTotal,
+          reachedLimit: nextTotal >= settings.maxBattlesPerPlayer,
+        };
+      });
+
+      if (queue.length === 0) {
+        batch.set(doc(db, "status", "activePlayers"), {
+          players: activePlayers,
+          updatedAt: Date.now(),
+        });
+
+        await batch.commit();
+        setStatusMessage(
+          "試合終了を反映しました。待機がいないためプレイ中はそのままです。",
+          "success"
+        );
+        return;
+      }
+
+      const limitReachedIndexes = incrementedTotals
+        .map((item, index) => ({ index, reachedLimit: item.reachedLimit }))
+        .filter((item) => item.reachedLimit)
+        .map((item) => item.index);
+
+      const removableCount = Math.min(limitReachedIndexes.length, queue.length);
+      const removableIndexSet = new Set(
+        limitReachedIndexes.slice(0, removableCount)
       );
 
-      await setDoc(
-        doc(db, "playerStats", getPlayerStatsId(currentPlayer.name)),
-        {
-          name: currentPlayer.name,
-          totalBattles: nextTotal,
-        },
-        { merge: true }
-      );
+      const remainingPlayers = incrementedTotals
+        .filter((_, index) => !removableIndexSet.has(index))
+        .map((item) => item.player);
 
-      if (nextTotal >= 2) {
-        setMessage(
-          `${currentPlayer.name} さんはこの配信で ${nextTotal} 戦目です。参加上限に達しています。`
+      const replacements = queue.slice(0, removableCount).map((user) => ({
+        name: user.name,
+        startedAt: Date.now(),
+        joinedTotalBattles: getBattleCount(user.name),
+      }));
+
+      queue.slice(0, removableCount).forEach((user) => {
+        batch.delete(doc(db, "queue", user.id));
+      });
+
+      batch.set(doc(db, "status", "activePlayers"), {
+        players: [...remainingPlayers, ...replacements],
+        updatedAt: Date.now(),
+      });
+
+      await batch.commit();
+
+      if (removableCount > 0) {
+        setStatusMessage(
+          `試合終了を反映しました。${removableCount} 人を入れ替えました。`,
+          "success"
         );
       } else {
-        setMessage(
-          `${currentPlayer.name} さんの対戦数を ${nextPlay} に更新しました。`
+        setStatusMessage(
+          "試合終了を反映しました。上限到達者はいませんでした。",
+          "success"
         );
       }
-    } catch (error: any) {
-      console.error("addBattle error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`対戦数更新失敗: ${code} / ${detail}`);
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("試合終了処理に失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const moveCurrentPlayerToQueueEnd = async () => {
-    if (isBusy) return;
+  const removeActivePlayer = async (playerName: string) => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
-      return;
-    }
-
-    if (!currentPlayer) {
-      setMessage("今プレイ中の人がいません。");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `${currentPlayer.name} さんを待機列の最後尾へ戻しますか？`
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("待機列の最後に戻しています...");
+    setIsProcessing(true);
 
     try {
-      await addDoc(collection(db, "queue"), {
-        name: currentPlayer.name,
+      const nextPlayers = activePlayers.filter(
+        (player) => player.name !== playerName
+      );
+      await syncActivePlayers(nextPlayers);
+      setStatusMessage(`${playerName} をプレイ中から外しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("プレイ中からの削除に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const returnActivePlayerToBack = async (playerName: string) => {
+    if (!isHost || isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      const batch = writeBatch(db);
+
+      const nextPlayers = activePlayers.filter(
+        (player) => player.name !== playerName
+      );
+
+      batch.set(doc(db, "status", "activePlayers"), {
+        players: nextPlayers,
+        updatedAt: Date.now(),
+      });
+
+      const newQueueRef = doc(collection(db, "queue"));
+      batch.set(newQueueRef, {
+        name: playerName,
         createdAt: Date.now(),
       });
 
-      await deleteDoc(doc(db, "status", "currentPlayer"));
-
-      setMessage(`${currentPlayer.name} さんを待機列の最後に戻しました。`);
-    } catch (error: any) {
-      console.error("moveCurrentPlayerToQueueEnd error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`最後尾へ戻す処理失敗: ${code} / ${detail}`);
+      await batch.commit();
+      setStatusMessage(`${playerName} を待機列の最後尾に戻しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("最後尾へ戻す処理に失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const clearPlayer = async () => {
-    if (isBusy) return;
+  const incrementBattleCount = async (playerName: string) => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
-      return;
-    }
-
-    if (!currentPlayer) {
-      setMessage("今プレイ中の人はいません。");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `${currentPlayer.name} さんを終了してクリアしますか？`
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("今プレイ中をクリアしています...");
+    setIsProcessing(true);
 
     try {
-      const name = currentPlayer.name;
-      await deleteDoc(doc(db, "status", "currentPlayer"));
-      setMessage(`${name} さんをクリアしました。`);
-    } catch (error: any) {
-      console.error("clearPlayer error:", error);
+      const statsRef = doc(db, "playerStats", getPlayerStatsId(playerName));
+      const currentBattles = getBattleCount(playerName);
 
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
+      await setDoc(
+        statsRef,
+        {
+          name: playerName,
+          totalBattles: currentBattles + 1,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
 
-      setMessage(`クリア処理失敗: ${code} / ${detail}`);
+      setStatusMessage(
+        `${playerName} の配信通算を ${currentBattles + 1} 戦に更新しました。`,
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("対戦数の更新に失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const removeFromQueue = async (userId: string, userName: string) => {
-    if (isBusy) return;
+  const incrementAllActivePlayers = async () => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
+    if (activePlayers.length === 0) {
+      setStatusMessage("プレイ中の参加者がいません。", "error");
       return;
     }
 
-    const confirmed = window.confirm(
-      `${userName} さんを待機リストから削除しますか？`
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("待機リストから削除中...");
+    setIsProcessing(true);
 
     try {
-      await deleteDoc(doc(db, "queue", userId));
-      setMessage(`${userName} さんを待機リストから削除しました。`);
-    } catch (error: any) {
-      console.error("removeFromQueue error:", error);
+      const batch = writeBatch(db);
 
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
+      for (const player of activePlayers) {
+        const statsRef = doc(db, "playerStats", getPlayerStatsId(player.name));
+        const currentBattles = getBattleCount(player.name);
 
-      setMessage(`待機リスト削除失敗: ${code} / ${detail}`);
+        batch.set(
+          statsRef,
+          {
+            name: player.name,
+            totalBattles: currentBattles + 1,
+            updatedAt: Date.now(),
+          },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+      setStatusMessage("プレイ中の全員を +1戦 しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("全員の対戦数更新に失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const clearAllQueue = async () => {
-    if (isBusy) return;
+  const deleteQueueUser = async (queueId: string, queueName: string) => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
-      return;
+    setIsProcessing(true);
+
+    try {
+      await deleteDoc(doc(db, "queue", queueId));
+      setStatusMessage(`${queueName} を待機列から削除しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("待機列からの削除に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const resetQueue = async () => {
+    if (!isHost || isProcessing) return;
 
     if (queue.length === 0) {
-      setMessage("待機列は空です。");
+      setStatusMessage("待機列は空です。", "info");
       return;
     }
 
-    const confirmed = window.confirm(
-      `待機列 ${queue.length} 人分をすべて削除しますか？`
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("待機列を全削除しています...");
+    setIsProcessing(true);
 
     try {
-      const snapshot = await getDocs(collection(db, "queue"));
+      const batch = writeBatch(db);
 
-      for (const item of snapshot.docs) {
-        await deleteDoc(doc(db, "queue", item.id));
-      }
+      queue.forEach((user) => {
+        batch.delete(doc(db, "queue", user.id));
+      });
 
-      setMessage("待機列を全削除しました。");
-    } catch (error: any) {
-      console.error("clearAllQueue error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`待機列全削除失敗: ${code} / ${detail}`);
+      await batch.commit();
+      setStatusMessage("待機列を全削除しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("待機列のリセットに失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const resetCurrentPlayerOnly = async () => {
-    if (isBusy) return;
+  const clearActivePlayers = async () => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
+    if (activePlayers.length === 0) {
+      setStatusMessage("プレイ中の参加者はいません。", "info");
       return;
     }
 
-    if (!currentPlayer) {
-      setMessage("今プレイ中の人はいません。");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `今プレイ中の ${currentPlayer.name} さんを削除しますか？`
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("今プレイ中を削除しています...");
+    setIsProcessing(true);
 
     try {
-      const name = currentPlayer.name;
-      await deleteDoc(doc(db, "status", "currentPlayer"));
-      setMessage(`${name} さんを今プレイ中から削除しました。`);
-    } catch (error: any) {
-      console.error("resetCurrentPlayerOnly error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`今プレイ中削除失敗: ${code} / ${detail}`);
+      await syncActivePlayers([]);
+      setStatusMessage("プレイ中の参加者を全クリアしました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("プレイ中のクリアに失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const fullResetSession = async () => {
-    if (isBusy) return;
+  const fullReset = async () => {
+    if (!isHost || isProcessing) return;
 
-    if (!isHost) {
-      setMessage("host権限がありません。");
+    if (queue.length === 0 && activePlayers.length === 0) {
+      setStatusMessage("すでに空の状態です。", "info");
       return;
     }
 
-    const confirmed = window.confirm(
-      "待機列と今プレイ中をすべて初期化しますか？"
-    );
-    if (!confirmed) return;
-
-    setIsBusy(true);
-    setMessage("配信データを全リセットしています...");
+    setIsProcessing(true);
 
     try {
-      const snapshot = await getDocs(collection(db, "queue"));
+      const batch = writeBatch(db);
 
-      for (const item of snapshot.docs) {
-        await deleteDoc(doc(db, "queue", item.id));
-      }
+      queue.forEach((user) => {
+        batch.delete(doc(db, "queue", user.id));
+      });
 
-      await deleteDoc(doc(db, "status", "currentPlayer"));
+      batch.set(doc(db, "status", "activePlayers"), {
+        players: [],
+        updatedAt: Date.now(),
+      });
 
-      setMessage("待機列と今プレイ中を全リセットしました。");
-    } catch (error: any) {
-      console.error("fullResetSession error:", error);
-
-      const code = error?.code ?? "unknown";
-      const detail = error?.message ?? "詳細不明";
-
-      setMessage(`全リセット失敗: ${code} / ${detail}`);
+      await batch.commit();
+      setStatusMessage("全リセットしました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("全リセットに失敗しました。", "error");
     } finally {
-      setIsBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  if (authLoading) {
-    return (
-      <main style={{ padding: 24 }}>
-        <p>認証状態を確認中...</p>
-      </main>
-    );
-  }
+  const activeStatusText = useMemo(() => {
+    return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
+  }, [activePlayers.length, settings.maxActivePlayers]);
 
   if (!user) {
     return (
-      <main style={{ minHeight: "100vh", padding: 24, background: "#f8fafc" }}>
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
         <div
           style={{
-            maxWidth: 520,
-            margin: "40px auto",
-            background: "#fff",
+            width: "100%",
+            maxWidth: 480,
+            background: "#ffffff",
             borderRadius: 20,
             padding: 24,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
           }}
         >
-          <h1 style={{ fontSize: 28, fontWeight: "bold", marginBottom: 12 }}>
-            配信者ログイン
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: "bold",
+              marginTop: 0,
+              marginBottom: 8,
+            }}
+          >
+            host
           </h1>
 
-          <p style={{ color: "#475569", lineHeight: 1.6, marginBottom: 16 }}>
-            host画面は Google ログインが必要です。
+          <p
+            style={{
+              color: "#475569",
+              lineHeight: 1.7,
+              marginTop: 0,
+              marginBottom: 16,
+            }}
+          >
+            配信者用画面です。Googleログインしてください。
           </p>
 
           <button
-            onClick={signInAsHost}
+            onClick={() => void loginWithGoogle()}
             style={{
               width: "100%",
-              padding: "14px 16px",
-              borderRadius: 14,
+              minHeight: 52,
               border: "none",
+              borderRadius: 14,
               backgroundColor: "#2563eb",
               color: "#fff",
-              fontSize: 16,
+              fontSize: 17,
               fontWeight: "bold",
               cursor: "pointer",
             }}
           >
             Googleでログイン
-          </button>
-
-          {message && (
-            <div
-              style={{
-                marginTop: 14,
-                padding: "12px 14px",
-                borderRadius: 14,
-                backgroundColor: "#fef3c7",
-                color: "#92400e",
-                fontSize: 14,
-                wordBreak: "break-word",
-              }}
-            >
-              {message}
-            </div>
-          )}
-        </div>
-      </main>
-    );
-  }
-
-  if (!HOST_UID) {
-    return (
-      <main style={{ minHeight: "100vh", padding: 24, background: "#f8fafc" }}>
-        <div
-          style={{
-            maxWidth: 700,
-            margin: "40px auto",
-            background: "#fff",
-            borderRadius: 20,
-            padding: 24,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-          }}
-        >
-          <h1 style={{ fontSize: 28, fontWeight: "bold", marginBottom: 12 }}>
-            host UID 未設定
-          </h1>
-
-          <p style={{ color: "#475569", lineHeight: 1.6, marginBottom: 16 }}>
-            まずこの画面で自分の UID を確認して、
-            <code> HOST_UID </code>
-            に貼り付けてください。
-          </p>
-
-          <div
-            style={{
-              padding: "14px 16px",
-              borderRadius: 14,
-              backgroundColor: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              marginBottom: 12,
-              wordBreak: "break-all",
-            }}
-          >
-            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>
-              ログイン中メール
-            </div>
-            <div style={{ marginBottom: 12 }}>{user.email ?? "なし"}</div>
-
-            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>
-              UID
-            </div>
-            <div>{user.uid}</div>
-          </div>
-
-          <button
-            onClick={logout}
-            style={{
-              width: "100%",
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "none",
-              backgroundColor: "#64748b",
-              color: "#fff",
-              fontSize: 16,
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-          >
-            ログアウト
           </button>
         </div>
       </main>
@@ -625,58 +748,58 @@ export default function HostPage() {
 
   if (!isHost) {
     return (
-      <main style={{ minHeight: "100vh", padding: 24, background: "#f8fafc" }}>
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
         <div
           style={{
+            width: "100%",
             maxWidth: 520,
-            margin: "40px auto",
-            background: "#fff",
+            background: "#ffffff",
             borderRadius: 20,
             padding: 24,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
           }}
         >
-          <h1 style={{ fontSize: 28, fontWeight: "bold", marginBottom: 12 }}>
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: "bold",
+              marginTop: 0,
+              marginBottom: 8,
+            }}
+          >
             権限がありません
           </h1>
 
-          <p style={{ color: "#475569", lineHeight: 1.6, marginBottom: 16 }}>
+          <p
+            style={{
+              color: "#475569",
+              lineHeight: 1.7,
+              marginTop: 0,
+              marginBottom: 16,
+            }}
+          >
             このアカウントでは host 画面を利用できません。
           </p>
 
-          <div
-            style={{
-              marginBottom: 12,
-              color: "#334155",
-              fontSize: 14,
-              wordBreak: "break-all",
-            }}
-          >
-            ログイン中: {user.email ?? user.uid}
-          </div>
-
-          <div
-            style={{
-              marginBottom: 16,
-              color: "#64748b",
-              fontSize: 13,
-              wordBreak: "break-all",
-            }}
-          >
-            UID: {user.uid}
-          </div>
-
           <button
-            onClick={logout}
+            onClick={() => void logout()}
             style={{
               width: "100%",
-              padding: "14px 16px",
-              borderRadius: 14,
+              minHeight: 48,
               border: "none",
+              borderRadius: 14,
               backgroundColor: "#64748b",
               color: "#fff",
               fontSize: 16,
-              fontWeight: "bold",
               cursor: "pointer",
             }}
           >
@@ -692,73 +815,63 @@ export default function HostPage() {
       style={{
         minHeight: "100vh",
         background:
-          "linear-gradient(180deg, #f0fdf4 0%, #f8fafc 45%, #ffffff 100%)",
+          "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
         padding: "16px 12px 32px",
       }}
     >
-      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          display: "grid",
+          gap: 14,
+        }}
+      >
         <div
           style={{
             backgroundColor: "#ffffff",
             borderRadius: 20,
-            padding: 20,
+            padding: 18,
             boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-            marginBottom: 14,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          <h1
-            style={{
-              fontSize: 28,
-              fontWeight: "bold",
-              marginBottom: 6,
-              lineHeight: 1.2,
-            }}
-          >
-            配信者管理
-          </h1>
-
-          <p
-            style={{
-              color: "#475569",
-              margin: 0,
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            順番送り、対戦数加算、待機列管理、配信終了時の初期化をここで行います。
-          </p>
-
-          <div
-            style={{
-              marginTop: 12,
-              fontSize: 13,
-              color: "#64748b",
-              wordBreak: "break-all",
-            }}
-          >
-            ログイン中: {user.email ?? user.uid}
-          </div>
-
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: 12,
-              color: "#94a3b8",
-              wordBreak: "break-all",
-            }}
-          >
-            UID: {user.uid}
+          <div>
+            <h1
+              style={{
+                fontSize: 28,
+                fontWeight: "bold",
+                margin: 0,
+                lineHeight: 1.2,
+              }}
+            >
+              host
+            </h1>
+            <p
+              style={{
+                margin: "6px 0 0 0",
+                color: "#475569",
+                fontSize: 14,
+              }}
+            >
+              ログイン中: {user.email ?? user.uid}
+            </p>
           </div>
 
           <button
-            onClick={logout}
+            onClick={() => void logout()}
             style={{
-              marginTop: 10,
-              padding: "10px 14px",
-              borderRadius: 10,
+              minHeight: 44,
+              padding: "10px 16px",
+              borderRadius: 12,
               border: "none",
               backgroundColor: "#64748b",
               color: "#fff",
+              fontSize: 15,
               cursor: "pointer",
             }}
           >
@@ -766,321 +879,15 @@ export default function HostPage() {
           </button>
         </div>
 
-        <div style={{ display: "grid", gap: 12, marginBottom: 14 }}>
-          <div
-            style={{
-              backgroundColor: "#dcfce7",
-              color: "#166534",
-              borderRadius: 18,
-              padding: 18,
-              boxShadow: "0 10px 24px rgba(0, 0, 0, 0.05)",
-            }}
-          >
-            <div style={{ fontSize: 13, marginBottom: 4, opacity: 0.9 }}>
-              今プレイ中
-            </div>
-
-            <div
-              style={{
-                fontSize: 26,
-                fontWeight: "bold",
-                lineHeight: 1.2,
-                marginBottom: 6,
-              }}
-            >
-              {currentPlayer?.name ?? "なし"}
-            </div>
-
-            <div style={{ fontSize: 14, marginBottom: 4 }}>
-              この順番での対戦数：{currentPlayer?.playCount ?? 0}
-            </div>
-
-            <div style={{ fontSize: 14 }}>
-              この配信での累計対戦数：{currentPlayer?.totalBattles ?? 0}
-            </div>
-
-            {currentPlayer && currentPlayer.totalBattles >= 2 && (
-              <div
-                style={{
-                  marginTop: 10,
-                  backgroundColor: "#fef3c7",
-                  color: "#92400e",
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  fontSize: 13,
-                  fontWeight: "bold",
-                }}
-              >
-                この人は参加上限に達しています。
-              </div>
-            )}
-          </div>
-
-          <div
-            style={{
-              backgroundColor: "#e0f2fe",
-              color: "#0c4a6e",
-              borderRadius: 18,
-              padding: 18,
-              boxShadow: "0 10px 24px rgba(0, 0, 0, 0.05)",
-            }}
-          >
-            <div style={{ fontSize: 13, marginBottom: 4, opacity: 0.9 }}>
-              次の人
-            </div>
-
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                lineHeight: 1.2,
-              }}
-            >
-              {nextUpName}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                borderRadius: 18,
-                padding: 18,
-                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.05)",
-              }}
-            >
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
-                待機人数
-              </div>
-              <div style={{ fontSize: 30, fontWeight: "bold", color: "#0f172a" }}>
-                {waitingCount}
-              </div>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                borderRadius: 18,
-                padding: 18,
-                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.05)",
-              }}
-            >
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
-                処理状態
-              </div>
-              <div style={{ fontSize: 16, fontWeight: "bold", color: "#0f172a" }}>
-                {isBusy ? "処理中..." : "待機中"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: 20,
-            padding: 18,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
-            メイン操作
-          </div>
-
-          <div style={{ display: "grid", gap: 10 }}>
-            <button
-              onClick={nextPlayer}
-              disabled={isBusy}
-              style={{
-                width: "100%",
-                padding: "16px 18px",
-                fontSize: 20,
-                fontWeight: "bold",
-                backgroundColor: isBusy ? "#93c5fd" : "#2563eb",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 16,
-                cursor: isBusy ? "default" : "pointer",
-              }}
-            >
-              ▶ 次の人
-            </button>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: 10,
-              }}
-            >
-              <button
-                onClick={addBattle}
-                disabled={isBusy || !currentPlayer}
-                style={{
-                  padding: "14px 16px",
-                  fontSize: 16,
-                  fontWeight: "bold",
-                  backgroundColor:
-                    isBusy || !currentPlayer ? "#bae6fd" : "#0ea5e9",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 14,
-                  cursor: isBusy || !currentPlayer ? "default" : "pointer",
-                }}
-              >
-                +1戦
-              </button>
-
-              <button
-                onClick={moveCurrentPlayerToQueueEnd}
-                disabled={isBusy || !currentPlayer}
-                style={{
-                  padding: "14px 16px",
-                  fontSize: 16,
-                  fontWeight: "bold",
-                  backgroundColor:
-                    isBusy || !currentPlayer ? "#c4b5fd" : "#7c3aed",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 14,
-                  cursor: isBusy || !currentPlayer ? "default" : "pointer",
-                }}
-              >
-                最後尾に戻す
-              </button>
-
-              <button
-                onClick={clearPlayer}
-                disabled={isBusy || !currentPlayer}
-                style={{
-                  padding: "14px 16px",
-                  fontSize: 16,
-                  fontWeight: "bold",
-                  backgroundColor:
-                    isBusy || !currentPlayer ? "#cbd5e1" : "#64748b",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 14,
-                  cursor: isBusy || !currentPlayer ? "default" : "pointer",
-                }}
-              >
-                終了してクリア
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: 20,
-            padding: 18,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-            marginBottom: 14,
-            border: "1px solid #fecaca",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: "bold",
-              marginBottom: 8,
-              color: "#991b1b",
-            }}
-          >
-            配信終了時のリセット
-          </div>
-
-          <div
-            style={{
-              fontSize: 13,
-              color: "#7f1d1d",
-              lineHeight: 1.6,
-              marginBottom: 12,
-            }}
-          >
-            配信の終わりに待機列や今プレイ中を初期化するためのボタンです。
-            誤操作防止のため、すべて確認ダイアログが出ます。
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 10,
-            }}
-          >
-            <button
-              onClick={clearAllQueue}
-              disabled={isBusy}
-              style={{
-                padding: "14px 16px",
-                fontSize: 15,
-                fontWeight: "bold",
-                backgroundColor: isBusy ? "#fca5a5" : "#dc2626",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 14,
-                cursor: isBusy ? "default" : "pointer",
-              }}
-            >
-              待機列を全削除
-            </button>
-
-            <button
-              onClick={resetCurrentPlayerOnly}
-              disabled={isBusy}
-              style={{
-                padding: "14px 16px",
-                fontSize: 15,
-                fontWeight: "bold",
-                backgroundColor: isBusy ? "#fdba74" : "#ea580c",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 14,
-                cursor: isBusy ? "default" : "pointer",
-              }}
-            >
-              今プレイ中を削除
-            </button>
-
-            <button
-              onClick={fullResetSession}
-              disabled={isBusy}
-              style={{
-                padding: "14px 16px",
-                fontSize: 15,
-                fontWeight: "bold",
-                backgroundColor: isBusy ? "#fda4af" : "#be123c",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 14,
-                cursor: isBusy ? "default" : "pointer",
-              }}
-            >
-              全リセット
-            </button>
-          </div>
-        </div>
-
         {message && (
           <div
             style={{
-              marginBottom: 14,
               padding: "14px 16px",
               borderRadius: 16,
-              backgroundColor: "#fef3c7",
-              color: "#92400e",
               fontSize: 14,
               boxShadow: "0 8px 20px rgba(0, 0, 0, 0.05)",
               wordBreak: "break-word",
+              ...messageStyle,
             }}
           >
             {message}
@@ -1089,85 +896,587 @@ export default function HostPage() {
 
         <div
           style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#dbeafe",
+              color: "#1e3a8a",
+              borderRadius: 18,
+              padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+              ACTIVE SLOTS
+            </div>
+            <div style={{ fontSize: 30, fontWeight: "bold" }}>
+              {activeStatusText}
+            </div>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: "#dcfce7",
+              color: "#166534",
+              borderRadius: 18,
+              padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+              WAITING
+            </div>
+            <div style={{ fontSize: 30, fontWeight: "bold" }}>
+              {queue.length}人
+            </div>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: "#fef3c7",
+              color: "#92400e",
+              borderRadius: 18,
+              padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+              SETTINGS
+            </div>
+            <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
+              同時参加人数: {settings.maxActivePlayers}人
+              <br />
+              最大対戦数: {settings.maxBattlesPerPlayer}戦
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
             backgroundColor: "#ffffff",
             borderRadius: 20,
             padding: 18,
             boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
           }}
         >
-          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
-            待機リスト
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: "bold",
+              marginBottom: 14,
+            }}
+          >
+            設定変更
           </div>
 
-          {queue.length === 0 ? (
-            <p style={{ color: "#64748b", margin: 0 }}>
-              待機中の参加者はいません。
-            </p>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {queue.map((user, index) => (
-                <div
-                  key={user.id}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#64748b",
+                  marginBottom: 6,
+                }}
+              >
+                同時参加人数
+              </div>
+              <input
+                value={maxActivePlayersInput}
+                onChange={(e) => setMaxActivePlayersInput(e.target.value)}
+                inputMode="numeric"
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#64748b",
+                  marginBottom: 6,
+                }}
+              >
+                1人あたり最大対戦数
+              </div>
+              <input
+                value={maxBattlesInput}
+                onChange={(e) => setMaxBattlesInput(e.target.value)}
+                inputMode="numeric"
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={() => void saveSettings()}
+            disabled={isSavingSettings}
+            style={{
+              minHeight: 48,
+              padding: "12px 18px",
+              borderRadius: 12,
+              border: "none",
+              backgroundColor: isSavingSettings ? "#93c5fd" : "#2563eb",
+              color: "#fff",
+              fontSize: 16,
+              fontWeight: "bold",
+              cursor: isSavingSettings ? "default" : "pointer",
+            }}
+          >
+            {isSavingSettings ? "保存中..." : "設定を保存"}
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 20,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: "bold",
+                }}
+              >
+                プレイ中
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  onClick={() => void addNextPlayerToActive()}
+                  disabled={!hasOpenSlot || queue.length === 0 || isProcessing}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "12px 14px",
-                    borderRadius: 14,
-                    backgroundColor: index === 0 ? "#eff6ff" : "#f8fafc",
-                    border:
-                      index === 0
-                        ? "1px solid #93c5fd"
-                        : "1px solid #e2e8f0",
+                    minHeight: 44,
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "none",
+                    backgroundColor:
+                      !hasOpenSlot || queue.length === 0 || isProcessing
+                        ? "#93c5fd"
+                        : "#2563eb",
+                    color: "#fff",
+                    fontSize: 15,
+                    fontWeight: "bold",
+                    cursor:
+                      !hasOpenSlot || queue.length === 0 || isProcessing
+                        ? "default"
+                        : "pointer",
                   }}
                 >
-                  <div>
+                  次の人を追加
+                </button>
+
+                <button
+                  onClick={() => void endMatch()}
+                  disabled={isProcessing || activePlayers.length === 0}
+                  style={{
+                    minHeight: 44,
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "none",
+                    backgroundColor:
+                      isProcessing || activePlayers.length === 0
+                        ? "#86efac"
+                        : "#16a34a",
+                    color: "#fff",
+                    fontSize: 15,
+                    fontWeight: "bold",
+                    cursor:
+                      isProcessing || activePlayers.length === 0
+                        ? "default"
+                        : "pointer",
+                  }}
+                >
+                  試合終了
+                </button>
+              </div>
+            </div>
+
+            {activePlayers.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                }}
+              >
+                現在プレイ中の参加者はいません。
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                {activePlayers.map((player, index) => {
+                  const totalBattles = getBattleCount(player.name);
+                  const currentSessionBattles = getCurrentSessionBattles(player);
+                  const nextSessionBattle = currentSessionBattles + 1;
+                  const nextTotalBattle = totalBattles + 1;
+
+                  return (
+                    <div
+                      key={`${player.name}-${index}`}
+                      style={{
+                        borderRadius: 16,
+                        backgroundColor: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        padding: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: "bold",
+                          marginBottom: 6,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {player.name}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "#475569",
+                          lineHeight: 1.7,
+                          marginBottom: 10,
+                        }}
+                      >
+                        今回 {currentSessionBattles}戦 / 配信通算 {totalBattles}戦
+                        <br />
+                        次は {nextSessionBattle}戦目 (合計 {nextTotalBattle}戦目)
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          onClick={() => void incrementBattleCount(player.name)}
+                          disabled={isProcessing}
+                          style={{
+                            minHeight: 40,
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            border: "none",
+                            backgroundColor: "#16a34a",
+                            color: "#fff",
+                            fontSize: 14,
+                            fontWeight: "bold",
+                            cursor: isProcessing ? "default" : "pointer",
+                          }}
+                        >
+                          +1戦
+                        </button>
+
+                        <button
+                          onClick={() => void returnActivePlayerToBack(player.name)}
+                          disabled={isProcessing}
+                          style={{
+                            minHeight: 40,
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            border: "none",
+                            backgroundColor: "#2563eb",
+                            color: "#fff",
+                            fontSize: 14,
+                            fontWeight: "bold",
+                            cursor: isProcessing ? "default" : "pointer",
+                          }}
+                        >
+                          最後尾へ戻す
+                        </button>
+
+                        <button
+                          onClick={() => void removeActivePlayer(player.name)}
+                          disabled={isProcessing}
+                          style={{
+                            minHeight: 40,
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            border: "none",
+                            backgroundColor: "#ef4444",
+                            color: "#fff",
+                            fontSize: 14,
+                            fontWeight: "bold",
+                            cursor: isProcessing ? "default" : "pointer",
+                          }}
+                        >
+                          クリア
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 12,
+                lineHeight: 1.7,
+                color: "#64748b",
+                backgroundColor: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: 12,
+                padding: "10px 12px",
+              }}
+            >
+              試合終了ボタン:
+              <br />
+              ・プレイ中全員を +1戦
+              <br />
+              ・待機がいる場合のみ、上限到達者を自動で入れ替え
+              <br />
+              ・同時に上限到達したときは、先に参加した人から優先的に交代
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 14,
+              }}
+            >
+              <button
+                onClick={() => void incrementAllActivePlayers()}
+                disabled={isProcessing || activePlayers.length === 0}
+                style={{
+                  minHeight: 42,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor:
+                    isProcessing || activePlayers.length === 0
+                      ? "#86efac"
+                      : "#16a34a",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  cursor:
+                    isProcessing || activePlayers.length === 0
+                      ? "default"
+                      : "pointer",
+                }}
+              >
+                プレイ中全員を+1戦
+              </button>
+
+              <button
+                onClick={() => void clearActivePlayers()}
+                disabled={isProcessing || activePlayers.length === 0}
+                style={{
+                  minHeight: 42,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor:
+                    isProcessing || activePlayers.length === 0
+                      ? "#fca5a5"
+                      : "#ef4444",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  cursor:
+                    isProcessing || activePlayers.length === 0
+                      ? "default"
+                      : "pointer",
+                }}
+              >
+                プレイ中を全クリア
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 20,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: "bold",
+                marginBottom: 12,
+              }}
+            >
+              待機リスト
+            </div>
+
+            {queue.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                }}
+              >
+                待機中の参加者はいません。
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                {queue.map((user, index) => (
+                  <div
+                    key={user.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 14px",
+                      borderRadius: 14,
+                      backgroundColor: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
                     <div
                       style={{
                         fontSize: 15,
                         fontWeight: "bold",
                         color: "#0f172a",
-                        marginBottom: 2,
                       }}
                     >
-                      {index + 1}位：{user.name}
+                      {index + 1}：{user.name}
                     </div>
 
-                    {index === 0 && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#2563eb",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        次に呼ばれます
-                      </div>
-                    )}
+                    <button
+                      onClick={() => void deleteQueueUser(user.id, user.name)}
+                      disabled={isProcessing}
+                      style={{
+                        minHeight: 38,
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: "none",
+                        backgroundColor: "#ef4444",
+                        color: "#fff",
+                        fontSize: 13,
+                        fontWeight: "bold",
+                        cursor: isProcessing ? "default" : "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      削除
+                    </button>
                   </div>
+                ))}
+              </div>
+            )}
 
-                  <button
-                    onClick={() => removeFromQueue(user.id, user.name)}
-                    disabled={isBusy}
-                    style={{
-                      backgroundColor: isBusy ? "#fca5a5" : "#dc2626",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      fontSize: 14,
-                      fontWeight: "bold",
-                      cursor: isBusy ? "default" : "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    削除
-                  </button>
-                </div>
-              ))}
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 14,
+              }}
+            >
+              <button
+                onClick={() => void resetQueue()}
+                disabled={isProcessing || queue.length === 0}
+                style={{
+                  minHeight: 42,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor:
+                    isProcessing || queue.length === 0 ? "#fca5a5" : "#ef4444",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  cursor:
+                    isProcessing || queue.length === 0 ? "default" : "pointer",
+                }}
+              >
+                待機列を全削除
+              </button>
+
+              <button
+                onClick={() => void fullReset()}
+                disabled={
+                  isProcessing || (queue.length === 0 && activePlayers.length === 0)
+                }
+                style={{
+                  minHeight: 42,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor:
+                    isProcessing || (queue.length === 0 && activePlayers.length === 0)
+                      ? "#c4b5fd"
+                      : "#7c3aed",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  cursor:
+                    isProcessing || (queue.length === 0 && activePlayers.length === 0)
+                      ? "default"
+                      : "pointer",
+                }}
+              >
+                全リセット
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </main>

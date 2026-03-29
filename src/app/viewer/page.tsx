@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../../lib/firebase";
 import {
-  collection,
   addDoc,
-  onSnapshot,
-  query,
-  orderBy,
+  collection,
   doc,
   getDoc,
+  onSnapshot,
+  orderBy,
+  query,
 } from "firebase/firestore";
 
 type QueueUser = {
@@ -18,21 +18,48 @@ type QueueUser = {
   createdAt: number;
 };
 
-type CurrentPlayer = {
+type ActivePlayer = {
   name: string;
   startedAt: number;
-} | null;
+  joinedTotalBattles: number;
+};
+
+type QueueSettings = {
+  maxActivePlayers: number;
+  maxBattlesPerPlayer: number;
+};
+
+type MessageType = "success" | "error" | "info";
+
+const DEFAULT_SETTINGS: QueueSettings = {
+  maxActivePlayers: 2,
+  maxBattlesPerPlayer: 2,
+};
 
 const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
+const normalizeName = (name: string) => name.trim().toLowerCase();
+
 export default function ViewerPage() {
   const [name, setName] = useState("");
   const [queue, setQueue] = useState<QueueUser[]>([]);
+  const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>([]);
+  const [settings, setSettings] = useState<QueueSettings>(DEFAULT_SETTINGS);
+  const [playerStatsMap, setPlayerStatsMap] = useState<Record<string, number>>(
+    {}
+  );
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<MessageType>("info");
   const [myName, setMyName] = useState("");
-  const [currentPlayer, setCurrentPlayer] = useState<CurrentPlayer>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const setStatusMessage = (text: string, type: MessageType = "info") => {
+    setMessage(text);
+    setMessageType(type);
+  };
 
   useEffect(() => {
     const savedName = localStorage.getItem("queue_my_name");
@@ -41,83 +68,212 @@ export default function ViewerPage() {
       setName(savedName);
     }
 
-    const q = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
 
-    const unsubscribeQueue = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((docItem) => {
-        const raw = docItem.data();
+    const unsubscribeQueue = onSnapshot(
+      queueQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docItem) => {
+          const raw = docItem.data();
 
-        return {
-          id: typeof docItem.id === "string" ? docItem.id : "",
-          name: typeof raw.name === "string" ? raw.name : "",
-          createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-        };
-      });
+          return {
+            id: docItem.id,
+            name: typeof raw.name === "string" ? raw.name : "",
+            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+          };
+        });
 
-      setQueue(data);
-    });
-
-    const currentPlayerRef = doc(db, "status", "currentPlayer");
-
-    const unsubscribeCurrent = onSnapshot(currentPlayerRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        setCurrentPlayer(null);
-        return;
+        setQueue(data);
+      },
+      (error) => {
+        console.error("viewer queue onSnapshot error:", error);
+        setStatusMessage("待機列の読み込みに失敗しました。", "error");
       }
+    );
 
-      const raw = snapshot.data();
+    const unsubscribeActivePlayers = onSnapshot(
+      doc(db, "status", "activePlayers"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setActivePlayers([]);
+          return;
+        }
 
-      setCurrentPlayer({
-        name: typeof raw.name === "string" ? raw.name : "",
-        startedAt: typeof raw.startedAt === "number" ? raw.startedAt : 0,
-      });
-    });
+        const raw = snapshot.data();
+        const playersRaw = Array.isArray(raw.players) ? raw.players : [];
+
+        const players: ActivePlayer[] = playersRaw
+          .map((item) => ({
+            name: typeof item?.name === "string" ? item.name : "",
+            startedAt: typeof item?.startedAt === "number" ? item.startedAt : 0,
+            joinedTotalBattles:
+              typeof item?.joinedTotalBattles === "number"
+                ? item.joinedTotalBattles
+                : 0,
+          }))
+          .filter((item) => item.name.trim() !== "");
+
+        setActivePlayers(players);
+      },
+      (error) => {
+        console.error("viewer activePlayers onSnapshot error:", error);
+        setStatusMessage("プレイ中情報の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribeSettings = onSnapshot(
+      doc(db, "config", "queueSettings"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSettings(DEFAULT_SETTINGS);
+          return;
+        }
+
+        const raw = snapshot.data();
+
+        setSettings({
+          maxActivePlayers:
+            typeof raw.maxActivePlayers === "number" &&
+            raw.maxActivePlayers > 0
+              ? raw.maxActivePlayers
+              : DEFAULT_SETTINGS.maxActivePlayers,
+          maxBattlesPerPlayer:
+            typeof raw.maxBattlesPerPlayer === "number" &&
+            raw.maxBattlesPerPlayer > 0
+              ? raw.maxBattlesPerPlayer
+              : DEFAULT_SETTINGS.maxBattlesPerPlayer,
+        });
+      },
+      (error) => {
+        console.error("viewer queueSettings onSnapshot error:", error);
+        setStatusMessage("設定の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribePlayerStats = onSnapshot(
+      collection(db, "playerStats"),
+      (snapshot) => {
+        const nextMap: Record<string, number> = {};
+
+        snapshot.docs.forEach((docItem) => {
+          const raw = docItem.data();
+          const playerName = typeof raw.name === "string" ? raw.name : "";
+          const totalBattles =
+            typeof raw.totalBattles === "number" ? raw.totalBattles : 0;
+
+          if (playerName.trim()) {
+            nextMap[normalizeName(playerName)] = totalBattles;
+          }
+        });
+
+        setPlayerStatsMap(nextMap);
+      },
+      (error) => {
+        console.error("viewer playerStats onSnapshot error:", error);
+        setStatusMessage("対戦数の読み込みに失敗しました。", "error");
+      }
+    );
 
     return () => {
       unsubscribeQueue();
-      unsubscribeCurrent();
+      unsubscribeActivePlayers();
+      unsubscribeSettings();
+      unsubscribePlayerStats();
     };
   }, []);
 
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!message) return;
+
+    const timer = window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
+
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  const normalizedMyName = myName.trim().toLowerCase();
+
   const myPosition = useMemo(() => {
-    if (!myName) return -1;
+    if (!normalizedMyName) return -1;
 
     return queue.findIndex(
-      (user) => user.name.trim().toLowerCase() === myName.trim().toLowerCase()
+      (user) => user.name.trim().toLowerCase() === normalizedMyName
     );
-  }, [queue, myName]);
+  }, [queue, normalizedMyName]);
 
-  const nextUpName = useMemo(() => {
-    if (queue.length === 0) return "";
-    return queue[0].name;
-  }, [queue]);
+  const myActivePlayer = useMemo(() => {
+    if (!normalizedMyName) return null;
+
+    return (
+      activePlayers.find(
+        (player) => player.name.trim().toLowerCase() === normalizedMyName
+      ) ?? null
+    );
+  }, [activePlayers, normalizedMyName]);
+
+  const isMyTurnNow = !!myActivePlayer;
+
+  const myTotalBattles = useMemo(() => {
+    if (!normalizedMyName) return 0;
+    return playerStatsMap[normalizedMyName] ?? 0;
+  }, [playerStatsMap, normalizedMyName]);
+
+  const myCurrentSessionBattles = useMemo(() => {
+    if (!myActivePlayer) return 0;
+
+    const value = myTotalBattles - myActivePlayer.joinedTotalBattles;
+    return value >= 0 ? value : 0;
+  }, [myActivePlayer, myTotalBattles]);
+
+  const myNextSessionBattle = myCurrentSessionBattles + 1;
+  const myNextTotalBattle = myTotalBattles + 1;
+
+  const isInputLocked = isSubmitting || isMyTurnNow;
+  const isJoinButtonDisabled = isSubmitting || isMyTurnNow;
+  const isResetDisabled = isSubmitting || isMyTurnNow;
 
   const joinQueue = async () => {
     const trimmedName = name.trim();
 
     if (!trimmedName) {
-      setMessage("名前を入力してください。");
+      setStatusMessage("名前を入力してください。", "error");
       return;
     }
 
-    if (isSubmitting) return;
+    if (isSubmitting || isMyTurnNow) return;
 
     setIsSubmitting(true);
 
     try {
-      const alreadyExists = queue.some(
-        (user) => user.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      const normalizedTrimmedName = trimmedName.toLowerCase();
+
+      const alreadyInQueue = queue.some(
+        (user) => user.name.trim().toLowerCase() === normalizedTrimmedName
       );
 
-      if (alreadyExists) {
-        setMessage("その名前はすでに参加しています。");
+      const alreadyActive = activePlayers.some(
+        (player) => player.name.trim().toLowerCase() === normalizedTrimmedName
+      );
+
+      if (alreadyInQueue || alreadyActive) {
         setMyName(trimmedName);
         localStorage.setItem("queue_my_name", trimmedName);
         setName(trimmedName);
+
+        if (alreadyActive) {
+          setStatusMessage("その名前は現在プレイ中です。", "info");
+        } else {
+          setStatusMessage("その名前はすでに待機列に参加しています。", "info");
+        }
         return;
       }
 
-      setMessage("参加確認中...");
+      setStatusMessage("参加確認中...", "info");
 
       const statsRef = doc(db, "playerStats", getPlayerStatsId(trimmedName));
       const statsSnap = await getDoc(statsRef);
@@ -132,12 +288,15 @@ export default function ViewerPage() {
             : 0;
       }
 
-      if (totalBattles >= 2) {
-        setMessage("この配信では2戦まで参加済みです。");
+      if (totalBattles >= settings.maxBattlesPerPlayer) {
+        setStatusMessage(
+          `この配信では ${settings.maxBattlesPerPlayer} 戦まで参加済みです。`,
+          "error"
+        );
         return;
       }
 
-      setMessage("参加登録中...");
+      setStatusMessage("参加登録中...", "info");
 
       await addDoc(collection(db, "queue"), {
         name: trimmedName,
@@ -147,14 +306,14 @@ export default function ViewerPage() {
       setMyName(trimmedName);
       localStorage.setItem("queue_my_name", trimmedName);
       setName(trimmedName);
-      setMessage("参加しました。");
+      setStatusMessage("参加しました。", "success");
     } catch (error) {
       console.error(error);
 
       if (error instanceof Error) {
-        setMessage(`エラー: ${error.message}`);
+        setStatusMessage(`エラー: ${error.message}`, "error");
       } else {
-        setMessage("参加処理でエラーが発生しました。");
+        setStatusMessage("参加処理でエラーが発生しました。", "error");
       }
     } finally {
       setIsSubmitting(false);
@@ -162,14 +321,21 @@ export default function ViewerPage() {
   };
 
   const clearMyName = () => {
+    if (isMyTurnNow) return;
+
     setMyName("");
     setName("");
     localStorage.removeItem("queue_my_name");
     setMessage("");
+    inputRef.current?.focus();
   };
 
   const myStatusText = useMemo(() => {
     if (!myName) return "";
+
+    if (isMyTurnNow) {
+      return "今プレイ中です";
+    }
 
     if (myPosition >= 0) {
       if (myPosition === 0) {
@@ -179,7 +345,23 @@ export default function ViewerPage() {
     }
 
     return "現在、あなたの名前は待機列にありません。";
-  }, [myName, myPosition]);
+  }, [myName, myPosition, isMyTurnNow]);
+
+  const messageStyle =
+    messageType === "success"
+      ? {
+          backgroundColor: "#dcfce7",
+          color: "#166534",
+        }
+      : messageType === "error"
+      ? {
+          backgroundColor: "#fee2e2",
+          color: "#991b1b",
+        }
+      : {
+          backgroundColor: "#fef3c7",
+          color: "#92400e",
+        };
 
   return (
     <main
@@ -246,21 +428,44 @@ export default function ViewerPage() {
             <div
               style={{
                 fontSize: 13,
-                marginBottom: 4,
+                marginBottom: 8,
                 opacity: 0.9,
               }}
             >
-              今プレイ中
+              NOW PLAYING ({activePlayers.length}/{settings.maxActivePlayers})
             </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                lineHeight: 1.2,
-              }}
-            >
-              {currentPlayer ? currentPlayer.name : "なし"}
-            </div>
+
+            {activePlayers.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: "bold",
+                  lineHeight: 1.2,
+                }}
+              >
+                待機中
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                {activePlayers.map((player, index) => (
+                  <div
+                    key={`${player.name}-${index}`}
+                    style={{
+                      fontSize: 22,
+                      fontWeight: "bold",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {index + 1}. {player.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div
@@ -274,20 +479,25 @@ export default function ViewerPage() {
             <div
               style={{
                 fontSize: 13,
-                marginBottom: 4,
+                marginBottom: 6,
                 opacity: 0.9,
               }}
             >
-              次の人
+              SETTINGS
             </div>
+
             <div
               style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                lineHeight: 1.2,
+                fontSize: 15,
+                lineHeight: 1.7,
+                fontWeight: 600,
               }}
             >
-              {nextUpName || "待機なし"}
+              同時参加人数: {settings.maxActivePlayers}人
+              <br />
+              現在プレイ中: {activePlayers.length}人
+              <br />
+              1人あたり最大対戦数: {settings.maxBattlesPerPlayer}戦
             </div>
           </div>
         </div>
@@ -318,9 +528,18 @@ export default function ViewerPage() {
             }}
           >
             <input
+              ref={inputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="名前を入力"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void joinQueue();
+                }
+              }}
+              placeholder={isMyTurnNow ? "プレイ中は再参加できません" : "名前を入力"}
+              autoComplete="name"
+              enterKeyHint="send"
+              disabled={isInputLocked}
               style={{
                 width: "100%",
                 padding: "14px 16px",
@@ -328,42 +547,51 @@ export default function ViewerPage() {
                 border: "1px solid #cbd5e1",
                 fontSize: 16,
                 boxSizing: "border-box",
+                outline: "none",
+                backgroundColor: isInputLocked ? "#e2e8f0" : "#ffffff",
+                color: isInputLocked ? "#64748b" : "#0f172a",
               }}
             />
 
             <button
-              onClick={joinQueue}
-              disabled={isSubmitting}
+              onClick={() => void joinQueue()}
+              disabled={isJoinButtonDisabled}
               style={{
                 width: "100%",
+                minHeight: 52,
                 padding: "14px 16px",
                 borderRadius: 14,
                 border: "none",
-                backgroundColor: isSubmitting ? "#93c5fd" : "#2563eb",
+                backgroundColor: isJoinButtonDisabled ? "#93c5fd" : "#2563eb",
                 color: "#fff",
                 fontSize: 17,
                 fontWeight: "bold",
-                cursor: isSubmitting ? "default" : "pointer",
+                cursor: isJoinButtonDisabled ? "default" : "pointer",
               }}
             >
-              {isSubmitting ? "処理中..." : "参加する"}
+              {isSubmitting
+                ? "処理中..."
+                : isMyTurnNow
+                ? "プレイ中です"
+                : "参加する"}
             </button>
 
             <button
               onClick={clearMyName}
-              disabled={isSubmitting}
+              disabled={isResetDisabled}
               style={{
                 width: "100%",
+                minHeight: 48,
                 padding: "14px 16px",
                 borderRadius: 14,
                 border: "none",
-                backgroundColor: "#64748b",
+                backgroundColor: isResetDisabled ? "#cbd5e1" : "#64748b",
                 color: "#fff",
                 fontSize: 16,
-                cursor: isSubmitting ? "default" : "pointer",
+                cursor: isResetDisabled ? "default" : "pointer",
               }}
             >
-              名前リセット
+              {isMyTurnNow ? "プレイ中はリセットできません" : "名前リセット"}
             </button>
           </div>
 
@@ -389,11 +617,10 @@ export default function ViewerPage() {
               marginBottom: 14,
               padding: "14px 16px",
               borderRadius: 16,
-              backgroundColor: "#fef3c7",
-              color: "#92400e",
               fontSize: 14,
               boxShadow: "0 8px 20px rgba(0, 0, 0, 0.05)",
               wordBreak: "break-word",
+              ...messageStyle,
             }}
           >
             {message}
@@ -406,8 +633,16 @@ export default function ViewerPage() {
               marginBottom: 14,
               padding: "16px 18px",
               borderRadius: 18,
-              backgroundColor: myPosition >= 0 ? "#dbeafe" : "#dcfce7",
-              color: myPosition >= 0 ? "#1e3a8a" : "#166534",
+              backgroundColor: isMyTurnNow
+                ? "#fde68a"
+                : myPosition >= 0
+                ? "#dbeafe"
+                : "#dcfce7",
+              color: isMyTurnNow
+                ? "#92400e"
+                : myPosition >= 0
+                ? "#1e3a8a"
+                : "#166534",
               boxShadow: "0 8px 20px rgba(0, 0, 0, 0.05)",
             }}
           >
@@ -429,16 +664,38 @@ export default function ViewerPage() {
                 marginBottom: 6,
               }}
             >
-              {myPosition >= 0 ? `${myPosition + 1} 番目` : "待機列外"}
+              {isMyTurnNow
+                ? "プレイ中"
+                : myPosition >= 0
+                ? `${myPosition + 1} 番目`
+                : "待機列外"}
             </div>
 
             <div
               style={{
                 fontSize: 15,
+                marginBottom: isMyTurnNow ? 10 : 0,
               }}
             >
               {myStatusText}
             </div>
+
+            {isMyTurnNow && myActivePlayer && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  backgroundColor: "rgba(255,255,255,0.45)",
+                  fontSize: 14,
+                  lineHeight: 1.8,
+                }}
+              >
+                今回 {myCurrentSessionBattles}戦 / 配信通算 {myTotalBattles}戦
+                <br />
+                次は {myNextSessionBattle}戦目 (合計 {myNextTotalBattle}戦目)
+              </div>
+            )}
           </div>
         )}
 
@@ -478,8 +735,7 @@ export default function ViewerPage() {
             >
               {queue.map((user, index) => {
                 const isMe =
-                  myName.trim().toLowerCase() ===
-                  user.name.trim().toLowerCase();
+                  normalizedMyName === user.name.trim().toLowerCase();
 
                 return (
                   <div

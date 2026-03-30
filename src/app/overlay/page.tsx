@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { db, isFirebaseConfigured } from "../../lib/firebase";
+import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
 import {
   collection,
   doc,
@@ -152,7 +152,7 @@ export default function OverlayPage() {
     });
   }, [activePlayers, playerStatsMap]);
 
-  if (!isFirebaseConfigured) {
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
     return (
       <main
         style={{
@@ -167,6 +167,7 @@ export default function OverlayPage() {
         }}
       >
         Firebase設定待ち
+        {firebaseClientInitError ? ` / ${firebaseClientInitError}` : ""}
       </main>
     );
   }

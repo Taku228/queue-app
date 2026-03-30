@@ -1,7 +1,12 @@
 "use client";
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
-import { auth, db, isFirebaseConfigured } from "../../lib/firebase";
+import {
+  auth,
+  db,
+  firebaseClientInitError,
+  isFirebaseConfigured,
+} from "../../lib/firebase";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -945,7 +950,7 @@ export default function HostPage() {
     }
   };
 
-  if (!isFirebaseConfigured) {
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
     return (
       <main
         style={{
@@ -973,6 +978,12 @@ export default function HostPage() {
           <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
             `.env.local` に Firebase の公開キーを設定すると host 画面が使えるようになります。
             README の「初回セットアップ」を上から順に進めてください。
+            {firebaseClientInitError ? (
+              <>
+                <br />
+                初期化エラー: {firebaseClientInitError}
+              </>
+            ) : null}
           </p>
         </div>
       </main>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { db, isFirebaseConfigured } from "../../lib/firebase";
+import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
 import {
   addDoc,
   collection,
@@ -437,7 +437,7 @@ export default function ViewerPage() {
           color: "#92400e",
         };
 
-  if (!isFirebaseConfigured) {
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
     return (
       <main
         style={{
@@ -464,6 +464,12 @@ export default function ViewerPage() {
           </h1>
           <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
             配信者が Firebase 設定を完了すると、ここから参加できるようになります。
+            {firebaseClientInitError ? (
+              <>
+                <br />
+                初期化エラー: {firebaseClientInitError}
+              </>
+            ) : null}
           </p>
         </div>
       </main>

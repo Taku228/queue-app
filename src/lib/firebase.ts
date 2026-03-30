@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAuth, type Auth } from "firebase/auth";
 
 const cleanEnv = (value: string | undefined) => {
@@ -31,6 +31,26 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const db = getFirestore(app);
-export const auth: Auth =
-  typeof window !== "undefined" ? getAuth(app) : ({} as Auth);
+let dbInstance: Firestore | null = null;
+let authInstance: Auth | null = null;
+let firebaseInitError = "";
+
+try {
+  dbInstance = getFirestore(app);
+} catch (error) {
+  firebaseInitError =
+    error instanceof Error ? error.message : "Firestoreの初期化に失敗しました。";
+}
+
+if (typeof window !== "undefined") {
+  try {
+    authInstance = getAuth(app);
+  } catch (error) {
+    firebaseInitError =
+      error instanceof Error ? error.message : "Authの初期化に失敗しました。";
+  }
+}
+
+export const db: Firestore = dbInstance ?? ({} as Firestore);
+export const auth: Auth = authInstance ?? ({} as Auth);
+export const firebaseClientInitError = firebaseInitError;

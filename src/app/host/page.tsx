@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { auth, db } from "../../lib/firebase";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  auth,
+  db,
+  firebaseClientInitError,
+  isFirebaseConfigured,
+} from "../../lib/firebase";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -24,6 +29,7 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  participantToken?: string;
 };
 
 type ActivePlayer = {
@@ -38,16 +44,62 @@ type QueueSettings = {
 };
 
 type MessageType = "success" | "error" | "info";
+type PlanType = "free" | "pro" | "business";
+
+type SubscriptionConfig = {
+  plan: PlanType;
+};
+
+type SubscriptionPricing = {
+  proMonthlyYen: number;
+  businessMonthlyYen: number;
+};
+
+type OverlayTheme = {
+  cardBackground: string;
+  cardText: string;
+};
 
 const DEFAULT_SETTINGS: QueueSettings = {
   maxActivePlayers: 2,
   maxBattlesPerPlayer: 2,
 };
 
+const PLAN_LIMITS: Record<
+  PlanType,
+  { maxActivePlayers: number; label: string }
+> = {
+  free: { maxActivePlayers: 2, label: "無料版" },
+  pro: { maxActivePlayers: 4, label: "有料版 Pro" },
+  business: {
+    maxActivePlayers: 8,
+    label: "有料版 Business",
+  },
+};
+
+const DEFAULT_PRICING: SubscriptionPricing = {
+  proMonthlyYen: 980,
+  businessMonthlyYen: 2980,
+};
+
+const DEFAULT_OVERLAY_THEME: OverlayTheme = {
+  cardBackground: "rgba(30, 41, 59, 0.62)",
+  cardText: "#ffffff",
+};
+
 const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
 const normalizeName = (name: string) => name.trim().toLowerCase();
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  fontSize: 14,
+  boxSizing: "border-box",
+};
 
 export default function HostPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -66,9 +118,23 @@ export default function HostPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [subscription, setSubscription] = useState<SubscriptionConfig>({
+    plan: "free",
+  });
+  const [pricing, setPricing] = useState<SubscriptionPricing>(DEFAULT_PRICING);
+  const [pricingInput, setPricingInput] = useState({
+    proMonthlyYen: String(DEFAULT_PRICING.proMonthlyYen),
+    businessMonthlyYen: String(DEFAULT_PRICING.businessMonthlyYen),
+  });
+  const [isSavingPricing, setIsSavingPricing] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [overlayTheme, setOverlayTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
+  const [isSavingOverlayTheme, setIsSavingOverlayTheme] = useState(false);
 
-  const hostUid = process.env.NEXT_PUBLIC_HOST_UID ?? "";
+  const hostUid =
+    process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
 
   const setStatusMessage = (text: string, type: MessageType = "info") => {
     setMessage(text);
@@ -76,24 +142,34 @@ export default function HostPage() {
   };
 
   useEffect(() => {
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
     });
 
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              participantToken: typeof raw.participantToken === "string" ? raw.participantToken : "",
+            };
+          })
+          .sort((a, b) => a.createdAt - b.createdAt);
 
         setQueue(data);
       },
@@ -192,12 +268,92 @@ export default function HostPage() {
       }
     );
 
+    const unsubscribeSubscription = onSnapshot(
+      doc(db, "config", "subscription"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSubscription({ plan: "free" });
+          return;
+        }
+        const raw = snapshot.data();
+        const plan =
+          raw.plan === "pro" || raw.plan === "business" ? raw.plan : "free";
+        setSubscription({ plan });
+      },
+      (error) => {
+        console.error("host subscription onSnapshot error:", error);
+        setStatusMessage("プラン設定の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribePricing = onSnapshot(
+      doc(db, "config", "subscriptionPricing"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setPricing(DEFAULT_PRICING);
+          setPricingInput({
+            proMonthlyYen: String(DEFAULT_PRICING.proMonthlyYen),
+            businessMonthlyYen: String(DEFAULT_PRICING.businessMonthlyYen),
+          });
+          return;
+        }
+        const raw = snapshot.data();
+        const nextPricing: SubscriptionPricing = {
+          proMonthlyYen:
+            typeof raw.proMonthlyYen === "number" && raw.proMonthlyYen > 0
+              ? raw.proMonthlyYen
+              : DEFAULT_PRICING.proMonthlyYen,
+          businessMonthlyYen:
+            typeof raw.businessMonthlyYen === "number" && raw.businessMonthlyYen > 0
+              ? raw.businessMonthlyYen
+              : DEFAULT_PRICING.businessMonthlyYen,
+        };
+        setPricing(nextPricing);
+        setPricingInput({
+          proMonthlyYen: String(nextPricing.proMonthlyYen),
+          businessMonthlyYen: String(nextPricing.businessMonthlyYen),
+        });
+      },
+      (error) => {
+        console.error("host subscriptionPricing onSnapshot error:", error);
+        setStatusMessage("料金設定の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribeOverlayTheme = onSnapshot(
+      doc(db, "config", "overlayTheme"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setOverlayTheme(DEFAULT_OVERLAY_THEME);
+          return;
+        }
+        const raw = snapshot.data();
+        setOverlayTheme({
+          cardBackground:
+            typeof raw.cardBackground === "string" && raw.cardBackground.trim()
+              ? raw.cardBackground
+              : DEFAULT_OVERLAY_THEME.cardBackground,
+          cardText:
+            typeof raw.cardText === "string" && raw.cardText.trim()
+              ? raw.cardText
+              : DEFAULT_OVERLAY_THEME.cardText,
+        });
+      },
+      (error) => {
+        console.error("host overlayTheme onSnapshot error:", error);
+        setStatusMessage("OBSカラー設定の読み込みに失敗しました。", "error");
+      }
+    );
+
     return () => {
       unsubscribeAuth();
       unsubscribeQueue();
       unsubscribeActivePlayers();
       unsubscribeSettings();
       unsubscribePlayerStats();
+      unsubscribeSubscription();
+      unsubscribePricing();
+      unsubscribeOverlayTheme();
     };
   }, []);
 
@@ -272,6 +428,14 @@ export default function HostPage() {
       parsedMaxActivePlayers <= 0
     ) {
       setStatusMessage("同時参加人数は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    if (parsedMaxActivePlayers > planLimit.maxActivePlayers) {
+      setStatusMessage(
+        `${PLAN_LIMITS[subscription.plan].label} の同時参加人数上限は ${planLimit.maxActivePlayers} 人です。`,
+        "error"
+      );
       return;
     }
 
@@ -680,6 +844,172 @@ export default function HostPage() {
   const activeStatusText = useMemo(() => {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
+  const planLimit = PLAN_LIMITS[subscription.plan];
+  const canUsePriority = subscription.plan !== "free";
+
+  const savePlan = async (plan: PlanType) => {
+    if (!isHost || isSavingPlan) return;
+
+    setIsSavingPlan(true);
+    try {
+      await setDoc(
+        doc(db, "config", "subscription"),
+        { plan, updatedAt: Date.now() },
+        { merge: true }
+      );
+
+      const capped = Math.min(settings.maxActivePlayers, PLAN_LIMITS[plan].maxActivePlayers);
+      if (capped !== settings.maxActivePlayers) {
+        await setDoc(
+          doc(db, "config", "queueSettings"),
+          { maxActivePlayers: capped, updatedAt: Date.now() },
+          { merge: true }
+        );
+      }
+
+      setStatusMessage(`プランを ${PLAN_LIMITS[plan].label} に変更しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("プラン変更に失敗しました。", "error");
+    } finally {
+      setIsSavingPlan(false);
+    }
+  };
+
+  const savePricing = async () => {
+    if (!isHost || isSavingPricing) return;
+
+    const proMonthlyYen = Number(pricingInput.proMonthlyYen);
+    const businessMonthlyYen = Number(pricingInput.businessMonthlyYen);
+
+    if (!Number.isInteger(proMonthlyYen) || proMonthlyYen <= 0) {
+      setStatusMessage("Pro価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+    if (!Number.isInteger(businessMonthlyYen) || businessMonthlyYen <= 0) {
+      setStatusMessage("Business価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    setIsSavingPricing(true);
+    try {
+      await setDoc(
+        doc(db, "config", "subscriptionPricing"),
+        { proMonthlyYen, businessMonthlyYen, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage("料金設定を保存しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("料金設定の保存に失敗しました。", "error");
+    } finally {
+      setIsSavingPricing(false);
+    }
+  };
+
+  const saveOverlayTheme = async () => {
+    if (!isHost || isSavingOverlayTheme) return;
+    if (subscription.plan === "free") {
+      setStatusMessage("OBSカード色変更は有料プラン（Pro以上）で利用できます。", "error");
+      return;
+    }
+
+    if (!overlayTheme.cardBackground.trim() || !overlayTheme.cardText.trim()) {
+      setStatusMessage("OBSカラーは未入力にできません。", "error");
+      return;
+    }
+
+    setIsSavingOverlayTheme(true);
+    try {
+      await setDoc(
+        doc(db, "config", "overlayTheme"),
+        { ...overlayTheme, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage("OBSカード色を保存しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("OBSカード色の保存に失敗しました。", "error");
+    } finally {
+      setIsSavingOverlayTheme(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !isHost) return;
+
+    const unsubscribeLicense = onSnapshot(
+      doc(db, "licenses", user.uid),
+      async (snapshot) => {
+        if (!snapshot.exists()) return;
+        const raw = snapshot.data();
+        const purchasedPlan: PlanType =
+          raw.plan === "pro" || raw.plan === "business" ? raw.plan : "free";
+
+        if (purchasedPlan === subscription.plan) return;
+
+        try {
+          await setDoc(
+            doc(db, "config", "subscription"),
+            { plan: purchasedPlan, updatedAt: Date.now(), source: "license" },
+            { merge: true }
+          );
+          setStatusMessage(
+            `購入プラン(${PLAN_LIMITS[purchasedPlan].label})を自動反映しました。`,
+            "success"
+          );
+        } catch (error) {
+          console.error(error);
+          setStatusMessage("購入プランの自動反映に失敗しました。", "error");
+        }
+      },
+      (error) => {
+        console.error("host license onSnapshot error:", error);
+      }
+    );
+
+    return () => unsubscribeLicense();
+  }, [user, isHost, subscription.plan]);
+
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 680,
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 24,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+          }}
+        >
+          <h1 style={{ fontSize: 26, margin: "0 0 8px 0" }}>
+            Firebase設定が未完了です
+          </h1>
+          <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
+            `.env.local` に Firebase の公開キーを設定すると host 画面が使えるようになります。
+            README の「初回セットアップ」を上から順に進めてください。
+            {firebaseClientInitError ? (
+              <>
+                <br />
+                初期化エラー: {firebaseClientInitError}
+              </>
+            ) : null}
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (!user) {
     return (
@@ -805,6 +1135,23 @@ export default function HostPage() {
           >
             ログアウト
           </button>
+
+          <button
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            style={{
+              minHeight: 44,
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "none",
+              backgroundColor: "#0f766e",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
+          </button>
         </div>
       </main>
     );
@@ -896,6 +1243,40 @@ export default function HostPage() {
 
         <div
           style={{
+            backgroundColor: "#ffffff",
+            borderRadius: 14,
+            padding: "10px 12px",
+            boxShadow: "0 6px 18px rgba(0, 0, 0, 0.06)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#334155" }}>
+            設定画面を開いてプラン・料金を変更できます
+          </div>
+          <button
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            style={{
+              minHeight: 36,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: "#0f766e",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: "bold",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
+          </button>
+        </div>
+
+        <div
+          style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
             gap: 14,
@@ -950,16 +1331,19 @@ export default function HostPage() {
               最大対戦数: {settings.maxBattlesPerPlayer}戦
             </div>
           </div>
+
+
         </div>
 
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: 20,
-            padding: 18,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-          }}
-        >
+        {isSettingsOpen && (
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 20,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            }}
+          >
           <div
             style={{
               fontSize: 18,
@@ -968,6 +1352,187 @@ export default function HostPage() {
             }}
           >
             設定変更
+          </div>
+
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {(Object.keys(PLAN_LIMITS) as PlanType[]).map((plan) => (
+                <button
+                  key={plan}
+                  onClick={() => void savePlan(plan)}
+                  disabled={isSavingPlan}
+                  style={{
+                    minHeight: 36,
+                    padding: "8px 12px",
+                    borderRadius: 9999,
+                    border:
+                      subscription.plan === plan
+                        ? "2px solid #2563eb"
+                        : "1px solid #cbd5e1",
+                    backgroundColor: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: isSavingPlan ? "default" : "pointer",
+                  }}
+                >
+                  {PLAN_LIMITS[plan].label}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
+              {planLimit.maxActivePlayers} 人 / 優先コード想定:{" "}
+              {canUsePriority ? "有料プラン" : "無料プラン"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン料金</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              <input
+                value={pricingInput.proMonthlyYen}
+                onChange={(e) =>
+                  setPricingInput((prev) => ({
+                    ...prev,
+                    proMonthlyYen: e.target.value,
+                  }))
+                }
+                inputMode="numeric"
+                placeholder="Pro 月額(円)"
+                style={inputStyle}
+              />
+              <input
+                value={pricingInput.businessMonthlyYen}
+                onChange={(e) =>
+                  setPricingInput((prev) => ({
+                    ...prev,
+                    businessMonthlyYen: e.target.value,
+                  }))
+                }
+                inputMode="numeric"
+                placeholder="Business 月額(円)"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              現在値: Pro ¥{pricing.proMonthlyYen.toLocaleString()} / Business ¥
+              {pricing.businessMonthlyYen.toLocaleString()}
+            </div>
+            <button
+              onClick={() => void savePricing()}
+              disabled={isSavingPricing}
+              style={{
+                marginTop: 8,
+                minHeight: 36,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: isSavingPricing ? "#93c5fd" : "#2563eb",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: "bold",
+                cursor: isSavingPricing ? "default" : "pointer",
+              }}
+            >
+              {isSavingPricing ? "保存中..." : "料金を保存"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+              OBSカード色（Pro / Business）
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              <input
+                value={overlayTheme.cardBackground}
+                onChange={(e) =>
+                  setOverlayTheme((prev) => ({
+                    ...prev,
+                    cardBackground: e.target.value,
+                  }))
+                }
+                placeholder="カード背景色 (例: rgba(30,41,59,0.62))"
+                style={inputStyle}
+                disabled={subscription.plan === "free"}
+              />
+              <input
+                value={overlayTheme.cardText}
+                onChange={(e) =>
+                  setOverlayTheme((prev) => ({
+                    ...prev,
+                    cardText: e.target.value,
+                  }))
+                }
+                placeholder="カード文字色 (例: #ffffff)"
+                style={inputStyle}
+                disabled={subscription.plan === "free"}
+              />
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              Freeプランでは編集不可です。現在値: 背景 {overlayTheme.cardBackground} / 文字{" "}
+              {overlayTheme.cardText}
+            </div>
+            <button
+              onClick={() => void saveOverlayTheme()}
+              disabled={isSavingOverlayTheme || subscription.plan === "free"}
+              style={{
+                marginTop: 8,
+                minHeight: 36,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor:
+                  isSavingOverlayTheme || subscription.plan === "free"
+                    ? "#cbd5e1"
+                    : "#0f766e",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: "bold",
+                cursor:
+                  isSavingOverlayTheme || subscription.plan === "free"
+                    ? "default"
+                    : "pointer",
+              }}
+            >
+              {isSavingOverlayTheme ? "保存中..." : "OBSカラーを保存"}
+            </button>
           </div>
 
           <div
@@ -1046,7 +1611,8 @@ export default function HostPage() {
           >
             {isSavingSettings ? "保存中..." : "設定を保存"}
           </button>
-        </div>
+          </div>
+        )}
 
         <div
           style={{

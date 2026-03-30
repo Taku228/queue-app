@@ -134,10 +134,10 @@ export default function HomePage() {
               onClick={() => copy(viewerUrl)}
               style={buttonBlue}
             >
-              コピー
+              コピ
             </button>
 
-            <a href={viewerUrl} target="_blank" style={buttonGray}>
+            <a href={viewerUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>
@@ -168,7 +168,7 @@ export default function HomePage() {
               コピー
             </button>
 
-            <a href={overlayUrl} target="_blank" style={buttonGray}>
+            <a href={overlayUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>
@@ -200,7 +200,7 @@ export default function HomePage() {
               コピー
             </button>
 
-            <a href={hostUrl} target="_blank" style={buttonGray}>
+            <a href={hostUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>

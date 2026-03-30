@@ -10,6 +10,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
 } from "firebase/firestore";
 
 type QueueUser = {
@@ -65,6 +66,7 @@ export default function ViewerPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [myName, setMyName] = useState("");
+  const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [participantToken, setParticipantToken] = useState("");
   // Backward-compatible plan state for partially merged branches that still reference setPlan.
@@ -186,6 +188,25 @@ export default function ViewerPage() {
       }
     );
 
+    const unsubscribeSubscription = onSnapshot(
+      doc(db, "config", "subscription"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setPlan("free");
+          return;
+        }
+        const raw = snapshot.data();
+        if (raw.plan === "pro" || raw.plan === "business") {
+          setPlan(raw.plan);
+        } else {
+          setPlan("free");
+        }
+      },
+      (error) => {
+        console.error("viewer subscription onSnapshot error:", error);
+      }
+    );
+
     const unsubscribePlayerStats = onSnapshot(
       collection(db, "playerStats"),
       (snapshot) => {
@@ -215,6 +236,7 @@ export default function ViewerPage() {
       unsubscribeActivePlayers();
       unsubscribeSettings();
       unsubscribePlayerStats();
+      unsubscribeSubscription();
     };
   }, []);
 
@@ -268,6 +290,7 @@ export default function ViewerPage() {
 
   const myNextSessionBattle = myCurrentSessionBattles + 1;
   const myNextTotalBattle = myTotalBattles + 1;
+  const canUsePriority = ENABLE_PRIORITY_FEATURES && plan !== "free";
 
   const isInputLocked = isSubmitting || isMyTurnNow;
   const isJoinButtonDisabled = isSubmitting || isMyTurnNow;
@@ -340,6 +363,58 @@ export default function ViewerPage() {
         return;
       }
 
+      let isPriorityEntry = false;
+      let redeemedCode = "";
+      let priorityPriceYen = 0;
+
+      if (supportCode.trim() && !canUsePriority) {
+        setStatusMessage(
+          "現在のプランでは優先コードは利用できないため、通常参加として登録します。",
+          "info"
+        );
+      }
+
+      if (supportCode.trim() && canUsePriority) {
+        setStatusMessage("優先コード確認中...", "info");
+        const normalizedCode = supportCode.trim().toUpperCase();
+
+        await runTransaction(db, async (transaction) => {
+          const codeRef = doc(db, "priorityCodes", normalizedCode);
+          const codeSnap = await transaction.get(codeRef);
+
+          if (!codeSnap.exists()) {
+            throw new Error("優先コードが見つかりません。");
+          }
+
+          const codeData = codeSnap.data();
+          const isActive = codeData.isActive !== false;
+          const remainingUses =
+            typeof codeData.remainingUses === "number"
+              ? codeData.remainingUses
+              : 0;
+          const priceYen =
+            typeof codeData.priceYen === "number" ? codeData.priceYen : 0;
+
+          if (!isActive || remainingUses <= 0) {
+            throw new Error("優先コードは利用上限に達しています。");
+          }
+
+          transaction.update(codeRef, {
+            remainingUses: remainingUses - 1,
+            redeemedCount:
+              typeof codeData.redeemedCount === "number"
+                ? codeData.redeemedCount + 1
+                : 1,
+            updatedAt: Date.now(),
+          });
+
+          priorityPriceYen = priceYen;
+        });
+
+        isPriorityEntry = true;
+        redeemedCode = normalizedCode;
+      }
+
       setStatusMessage("参加登録中...", "info");
 
       await addDoc(collection(db, "queue"), {
@@ -348,10 +423,23 @@ export default function ViewerPage() {
         participantToken,
       });
 
+      if (isPriorityEntry) {
+        await addDoc(collection(db, "priorityCodeRedemptions"), {
+          code: redeemedCode,
+          viewerName: trimmedName,
+          priceYen: priorityPriceYen,
+          redeemedAt: Date.now(),
+        });
+      }
+
       setMyName(trimmedName);
       localStorage.setItem("queue_my_name", trimmedName);
       setName(trimmedName);
-      setStatusMessage("参加しました。", "success");
+      setSupportCode("");
+      setStatusMessage(
+        isPriorityEntry ? "優先参加で登録しました。" : "参加しました。",
+        "success"
+      );
     } catch (error) {
       console.error(error);
 
@@ -644,6 +732,39 @@ export default function ViewerPage() {
               }}
             />
 
+            {canUsePriority ? (
+              <input
+                value={supportCode}
+                onChange={(e) => setSupportCode(e.target.value)}
+                placeholder="優先コード（任意） 例: VIP-AB12"
+                autoCapitalize="characters"
+                disabled={isInputLocked}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  fontSize: 15,
+                  boxSizing: "border-box",
+                  backgroundColor: isInputLocked ? "#e2e8f0" : "#ffffff",
+                  color: isInputLocked ? "#64748b" : "#0f172a",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: 13,
+                }}
+              >
+                現在のプランでは優先コード機能は無効です（無料版）。
+              </div>
+            )}
+
             <button
               onClick={() => void joinQueue()}
               disabled={isJoinButtonDisabled}
@@ -856,6 +977,21 @@ export default function ViewerPage() {
                         }}
                       >
                         {index + 1}：{user.name}
+                        {user.entryType === "priority" && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              fontSize: 11,
+                              padding: "3px 8px",
+                              borderRadius: 9999,
+                              backgroundColor: "#fef3c7",
+                              color: "#92400e",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            PRIORITY
+                          </span>
+                        )}
                       </div>
 
                       {isMe && (

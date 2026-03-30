@@ -137,6 +137,22 @@ export default function HostPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [overlayTheme, setOverlayTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
   const [isSavingOverlayTheme, setIsSavingOverlayTheme] = useState(false);
+  // Backward-compatible bindings for partially merged branches that still reference priority handlers.
+  const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
+  const [codePriceInput, setCodePriceInput] = useState("500");
+  const [codeUsesInput, setCodeUsesInput] = useState("1");
+  const [buyerNameInput, setBuyerNameInput] = useState("");
+  const priorityCompatBindings = {
+    codeLabelInput,
+    setCodeLabelInput,
+    codePriceInput,
+    setCodePriceInput,
+    codeUsesInput,
+    setCodeUsesInput,
+    buyerNameInput,
+    setBuyerNameInput,
+  };
+  void priorityCompatBindings;
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";

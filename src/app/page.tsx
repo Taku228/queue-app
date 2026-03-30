@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function HomePage() {
-  const [baseUrl, setBaseUrl] = useState("");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("app_base_url");
-    if (saved) {
-      setBaseUrl(saved);
-    } else {
-      setBaseUrl(window.location.origin);
-    }
-  }, []);
+  const [baseUrl, setBaseUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("app_base_url") ?? window.location.origin;
+  });
 
   const viewerUrl = `${baseUrl}/viewer`;
   const hostUrl = `${baseUrl}/host`;
@@ -209,6 +203,27 @@ export default function HomePage() {
             <a href={hostUrl} target="_blank" style={buttonGray}>
               開く
             </a>
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "#ecfeff",
+            borderRadius: 20,
+            padding: 18,
+            marginBottom: 16,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+            border: "1px solid #a5f3fc",
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 6 }}>
+            プラン管理
+          </div>
+          <div style={{ fontSize: 13, color: "#155e75", lineHeight: 1.7 }}>
+            host 画面の「設定を開く」から、無料版 / Pro / Business の
+            切り替えができます。
+            <br />
+            無料版でも参加列管理はそのまま利用できます。
           </div>
         </div>
 

@@ -162,6 +162,8 @@ export default function OverlayPage() {
     if (queue.length === 0) return "待機なし";
     return queue[0].name || "待機なし";
   }, [queue]);
+  const nextPlayerIsPriority =
+    ENABLE_PRIORITY_FEATURES && queue[0]?.entryType === "priority";
 
   const waitingCount = queue.length;
 
@@ -373,6 +375,22 @@ export default function OverlayPage() {
                 >
                   {nextPlayerName}
                 </div>
+                {nextPlayerIsPriority && (
+                  <div
+                    style={{
+                      display: "inline-block",
+                      marginTop: 8,
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "#92400e",
+                      background: "#fef3c7",
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                    }}
+                  >
+                    PRIORITY TICKET
+                  </div>
+                )}
               </div>
 
               <div

@@ -135,10 +135,10 @@ export default function HostPage() {
   const [overlayTheme, setOverlayTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
   const [isSavingOverlayTheme, setIsSavingOverlayTheme] = useState(false);
   // Compatibility fallback for branches where priority handlers still exist.
-  const [codeLabelInput] = useState("優先参加チケット");
-  const [codePriceInput] = useState("500");
-  const [codeUsesInput] = useState("1");
-  const [buyerNameInput] = useState("");
+  const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
+  const [codePriceInput, setCodePriceInput] = useState("500");
+  const [codeUsesInput, setCodeUsesInput] = useState("1");
+  const [buyerNameInput, setBuyerNameInput] = useState("");
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";

@@ -66,10 +66,38 @@ type QueueSettings = {
 };
 
 type MessageType = "success" | "error" | "info";
+type PlanType = "free" | "pro" | "business";
+
+type SubscriptionConfig = {
+  plan: PlanType;
+};
+
+type SubscriptionPricing = {
+  proMonthlyYen: number;
+  businessMonthlyYen: number;
+};
 
 const DEFAULT_SETTINGS: QueueSettings = {
   maxActivePlayers: 2,
   maxBattlesPerPlayer: 2,
+};
+
+const PLAN_LIMITS: Record<
+  PlanType,
+  { maxActivePlayers: number; canUsePriority: boolean; label: string }
+> = {
+  free: { maxActivePlayers: 2, canUsePriority: false, label: "無料版" },
+  pro: { maxActivePlayers: 4, canUsePriority: true, label: "有料版 Pro" },
+  business: {
+    maxActivePlayers: 8,
+    canUsePriority: true,
+    label: "有料版 Business",
+  },
+};
+
+const DEFAULT_PRICING: SubscriptionPricing = {
+  proMonthlyYen: 980,
+  businessMonthlyYen: 2980,
 };
 
 const getPlayerStatsId = (name: string) =>
@@ -103,6 +131,7 @@ export default function HostPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [priorityCodes, setPriorityCodes] = useState<PriorityCode[]>([]);
   const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
@@ -110,6 +139,15 @@ export default function HostPage() {
   const [codeUsesInput, setCodeUsesInput] = useState("1");
   const [buyerNameInput, setBuyerNameInput] = useState("");
   const [redemptionLogs, setRedemptionLogs] = useState<RedemptionLog[]>([]);
+  const [subscription, setSubscription] = useState<SubscriptionConfig>({
+    plan: "free",
+  });
+  const [pricing, setPricing] = useState<SubscriptionPricing>(DEFAULT_PRICING);
+  const [pricingInput, setPricingInput] = useState({
+    proMonthlyYen: String(DEFAULT_PRICING.proMonthlyYen),
+    businessMonthlyYen: String(DEFAULT_PRICING.businessMonthlyYen),
+  });
+  const [isSavingPricing, setIsSavingPricing] = useState(false);
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
@@ -282,6 +320,58 @@ export default function HostPage() {
       }
     );
 
+    const unsubscribeSubscription = onSnapshot(
+      doc(db, "config", "subscription"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSubscription({ plan: "free" });
+          return;
+        }
+        const raw = snapshot.data();
+        const plan =
+          raw.plan === "pro" || raw.plan === "business" ? raw.plan : "free";
+        setSubscription({ plan });
+      },
+      (error) => {
+        console.error("host subscription onSnapshot error:", error);
+        setStatusMessage("プラン設定の読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribePricing = onSnapshot(
+      doc(db, "config", "subscriptionPricing"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setPricing(DEFAULT_PRICING);
+          setPricingInput({
+            proMonthlyYen: String(DEFAULT_PRICING.proMonthlyYen),
+            businessMonthlyYen: String(DEFAULT_PRICING.businessMonthlyYen),
+          });
+          return;
+        }
+        const raw = snapshot.data();
+        const nextPricing: SubscriptionPricing = {
+          proMonthlyYen:
+            typeof raw.proMonthlyYen === "number" && raw.proMonthlyYen > 0
+              ? raw.proMonthlyYen
+              : DEFAULT_PRICING.proMonthlyYen,
+          businessMonthlyYen:
+            typeof raw.businessMonthlyYen === "number" && raw.businessMonthlyYen > 0
+              ? raw.businessMonthlyYen
+              : DEFAULT_PRICING.businessMonthlyYen,
+        };
+        setPricing(nextPricing);
+        setPricingInput({
+          proMonthlyYen: String(nextPricing.proMonthlyYen),
+          businessMonthlyYen: String(nextPricing.businessMonthlyYen),
+        });
+      },
+      (error) => {
+        console.error("host subscriptionPricing onSnapshot error:", error);
+        setStatusMessage("料金設定の読み込みに失敗しました。", "error");
+      }
+    );
+
     const unsubscribeRedemptionLogs = onSnapshot(
       query(
         collection(db, "priorityCodeRedemptions"),
@@ -315,6 +405,8 @@ export default function HostPage() {
       unsubscribePlayerStats();
       unsubscribePriorityCodes();
       unsubscribeRedemptionLogs();
+      unsubscribeSubscription();
+      unsubscribePricing();
     };
   }, []);
 
@@ -392,6 +484,14 @@ export default function HostPage() {
       return;
     }
 
+    if (parsedMaxActivePlayers > planLimit.maxActivePlayers) {
+      setStatusMessage(
+        `${PLAN_LIMITS[subscription.plan].label} の同時参加人数上限は ${planLimit.maxActivePlayers} 人です。`,
+        "error"
+      );
+      return;
+    }
+
     if (!Number.isInteger(parsedMaxBattles) || parsedMaxBattles <= 0) {
       setStatusMessage("最大対戦数は 1 以上の整数で入力してください。", "error");
       return;
@@ -417,6 +517,10 @@ export default function HostPage() {
 
   const createPriorityCode = async () => {
     if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      return;
+    }
 
     const label = codeLabelInput.trim();
     const priceYen = Number(codePriceInput);
@@ -468,6 +572,10 @@ export default function HostPage() {
 
   const issuePriorityTicketForBuyer = async () => {
     if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では購入者向けコード発行は利用できません。", "error");
+      return;
+    }
 
     const buyerName = buyerNameInput.trim();
     if (!buyerName) {
@@ -526,6 +634,10 @@ export default function HostPage() {
 
   const togglePriorityCode = async (code: string, nextActive: boolean) => {
     if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      return;
+    }
 
     setIsProcessing(true);
     try {
@@ -930,13 +1042,79 @@ export default function HostPage() {
   const activeStatusText = useMemo(() => {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
+  const planLimit = PLAN_LIMITS[subscription.plan];
+  const canUsePriority = planLimit.canUsePriority;
   const totalPriorityRevenue = useMemo(() => {
     return redemptionLogs.reduce((sum, item) => sum + item.priceYen, 0);
   }, [redemptionLogs]);
   const totalPrioritySales = redemptionLogs.length;
   const activeCodeCount = priorityCodes.filter((item) => item.isActive).length;
 
+  const savePlan = async (plan: PlanType) => {
+    if (!isHost || isSavingPlan) return;
+
+    setIsSavingPlan(true);
+    try {
+      await setDoc(
+        doc(db, "config", "subscription"),
+        { plan, updatedAt: Date.now() },
+        { merge: true }
+      );
+
+      const capped = Math.min(settings.maxActivePlayers, PLAN_LIMITS[plan].maxActivePlayers);
+      if (capped !== settings.maxActivePlayers) {
+        await setDoc(
+          doc(db, "config", "queueSettings"),
+          { maxActivePlayers: capped, updatedAt: Date.now() },
+          { merge: true }
+        );
+      }
+
+      setStatusMessage(`プランを ${PLAN_LIMITS[plan].label} に変更しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("プラン変更に失敗しました。", "error");
+    } finally {
+      setIsSavingPlan(false);
+    }
+  };
+
+  const savePricing = async () => {
+    if (!isHost || isSavingPricing) return;
+
+    const proMonthlyYen = Number(pricingInput.proMonthlyYen);
+    const businessMonthlyYen = Number(pricingInput.businessMonthlyYen);
+
+    if (!Number.isInteger(proMonthlyYen) || proMonthlyYen <= 0) {
+      setStatusMessage("Pro価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+    if (!Number.isInteger(businessMonthlyYen) || businessMonthlyYen <= 0) {
+      setStatusMessage("Business価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    setIsSavingPricing(true);
+    try {
+      await setDoc(
+        doc(db, "config", "subscriptionPricing"),
+        { proMonthlyYen, businessMonthlyYen, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage("料金設定を保存しました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("料金設定の保存に失敗しました。", "error");
+    } finally {
+      setIsSavingPricing(false);
+    }
+  };
+
   const copySalesReport = async () => {
+    if (!canUsePriority) {
+      setStatusMessage("無料版では売上レポートを利用できません。", "error");
+      return;
+    }
     const lines = [
       "優先参加チケット 売上レポート",
       `発行中コード: ${priorityCodes.length} (有効: ${activeCodeCount})`,
@@ -1311,6 +1489,113 @@ export default function HostPage() {
 
           <div
             style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {(Object.keys(PLAN_LIMITS) as PlanType[]).map((plan) => (
+                <button
+                  key={plan}
+                  onClick={() => void savePlan(plan)}
+                  disabled={isSavingPlan}
+                  style={{
+                    minHeight: 36,
+                    padding: "8px 12px",
+                    borderRadius: 9999,
+                    border:
+                      subscription.plan === plan
+                        ? "2px solid #2563eb"
+                        : "1px solid #cbd5e1",
+                    backgroundColor: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: isSavingPlan ? "default" : "pointer",
+                  }}
+                >
+                  {PLAN_LIMITS[plan].label}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
+              {planLimit.maxActivePlayers} 人 / 優先コード:{" "}
+              {canUsePriority ? "利用可" : "利用不可"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン料金</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              <input
+                value={pricingInput.proMonthlyYen}
+                onChange={(e) =>
+                  setPricingInput((prev) => ({
+                    ...prev,
+                    proMonthlyYen: e.target.value,
+                  }))
+                }
+                inputMode="numeric"
+                placeholder="Pro 月額(円)"
+                style={inputStyle}
+              />
+              <input
+                value={pricingInput.businessMonthlyYen}
+                onChange={(e) =>
+                  setPricingInput((prev) => ({
+                    ...prev,
+                    businessMonthlyYen: e.target.value,
+                  }))
+                }
+                inputMode="numeric"
+                placeholder="Business 月額(円)"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              現在値: Pro ¥{pricing.proMonthlyYen.toLocaleString()} / Business ¥
+              {pricing.businessMonthlyYen.toLocaleString()}
+            </div>
+            <button
+              onClick={() => void savePricing()}
+              disabled={isSavingPricing}
+              style={{
+                marginTop: 8,
+                minHeight: 36,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: isSavingPricing ? "#93c5fd" : "#2563eb",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: "bold",
+                cursor: isSavingPricing ? "default" : "pointer",
+              }}
+            >
+              {isSavingPricing ? "保存中..." : "料金を保存"}
+            </button>
+          </div>
+
+          <div
+            style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
@@ -1431,21 +1716,28 @@ export default function HostPage() {
 
           <button
             onClick={() => void createPriorityCode()}
-            disabled={isProcessing}
+            disabled={isProcessing || !canUsePriority}
             style={{
               minHeight: 42,
               padding: "10px 14px",
               borderRadius: 10,
               border: "none",
-              backgroundColor: isProcessing ? "#93c5fd" : "#2563eb",
+              backgroundColor:
+                isProcessing || !canUsePriority ? "#93c5fd" : "#2563eb",
               color: "#fff",
               fontSize: 14,
               fontWeight: "bold",
-              cursor: isProcessing ? "default" : "pointer",
+              cursor: isProcessing || !canUsePriority ? "default" : "pointer",
             }}
           >
             優先コードを発行
           </button>
+
+          {!canUsePriority && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              無料版では優先コード機能は利用できません。Pro以上で解放されます。
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             {[300, 500, 1000, 3000].map((price) => (
@@ -1492,7 +1784,7 @@ export default function HostPage() {
                   </div>
                   <button
                     onClick={() => void togglePriorityCode(item.code, !item.isActive)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || !canUsePriority}
                     style={{
                       marginTop: 8,
                       minHeight: 34,
@@ -1503,7 +1795,8 @@ export default function HostPage() {
                       color: "#fff",
                       fontSize: 12,
                       fontWeight: "bold",
-                      cursor: isProcessing ? "default" : "pointer",
+                      cursor:
+                        isProcessing || !canUsePriority ? "default" : "pointer",
                     }}
                   >
                     {item.isActive ? "停止する" : "再開する"}
@@ -1540,7 +1833,7 @@ export default function HostPage() {
               />
               <button
                 onClick={() => void issuePriorityTicketForBuyer()}
-                disabled={isProcessing}
+                disabled={isProcessing || !canUsePriority}
                 style={{
                   minHeight: 40,
                   padding: "8px 12px",
@@ -1550,7 +1843,7 @@ export default function HostPage() {
                   color: "#fff",
                   fontSize: 13,
                   fontWeight: "bold",
-                  cursor: isProcessing ? "default" : "pointer",
+                  cursor: isProcessing || !canUsePriority ? "default" : "pointer",
                 }}
               >
                 購入者コード発行
@@ -1589,6 +1882,7 @@ export default function HostPage() {
               <div style={{ fontWeight: "bold" }}>直近販売ログ</div>
               <button
                 onClick={() => void copySalesReport()}
+                disabled={!canUsePriority}
                 style={{
                   minHeight: 34,
                   padding: "6px 10px",
@@ -1598,7 +1892,8 @@ export default function HostPage() {
                   color: "#fff",
                   fontSize: 12,
                   fontWeight: "bold",
-                  cursor: "pointer",
+                  cursor: !canUsePriority ? "default" : "pointer",
+                  opacity: !canUsePriority ? 0.65 : 1,
                 }}
               >
                 レポートをコピー

@@ -33,6 +33,7 @@ type QueueSettings = {
 };
 
 type MessageType = "success" | "error" | "info";
+type PlanType = "free" | "pro" | "business";
 
 const DEFAULT_SETTINGS: QueueSettings = {
   maxActivePlayers: 2,
@@ -57,6 +58,7 @@ export default function ViewerPage() {
   const [myName, setMyName] = useState("");
   const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [plan, setPlan] = useState<PlanType>("free");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -173,6 +175,25 @@ export default function ViewerPage() {
       }
     );
 
+    const unsubscribeSubscription = onSnapshot(
+      doc(db, "config", "subscription"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setPlan("free");
+          return;
+        }
+        const raw = snapshot.data();
+        if (raw.plan === "pro" || raw.plan === "business") {
+          setPlan(raw.plan);
+        } else {
+          setPlan("free");
+        }
+      },
+      (error) => {
+        console.error("viewer subscription onSnapshot error:", error);
+      }
+    );
+
     const unsubscribePlayerStats = onSnapshot(
       collection(db, "playerStats"),
       (snapshot) => {
@@ -202,6 +223,7 @@ export default function ViewerPage() {
       unsubscribeActivePlayers();
       unsubscribeSettings();
       unsubscribePlayerStats();
+      unsubscribeSubscription();
     };
   }, []);
 
@@ -255,6 +277,7 @@ export default function ViewerPage() {
 
   const myNextSessionBattle = myCurrentSessionBattles + 1;
   const myNextTotalBattle = myTotalBattles + 1;
+  const canUsePriority = plan !== "free";
 
   const isInputLocked = isSubmitting || isMyTurnNow;
   const isJoinButtonDisabled = isSubmitting || isMyTurnNow;
@@ -323,7 +346,14 @@ export default function ViewerPage() {
       let redeemedCode = "";
       let priorityPriceYen = 0;
 
-      if (supportCode.trim()) {
+      if (supportCode.trim() && !canUsePriority) {
+        setStatusMessage(
+          "現在のプランでは優先コードは利用できないため、通常参加として登録します。",
+          "info"
+        );
+      }
+
+      if (supportCode.trim() && canUsePriority) {
         setStatusMessage("優先コード確認中...", "info");
         const normalizedCode = supportCode.trim().toUpperCase();
 
@@ -683,23 +713,38 @@ export default function ViewerPage() {
               }}
             />
 
-            <input
-              value={supportCode}
-              onChange={(e) => setSupportCode(e.target.value)}
-              placeholder="優先コード（任意） 例: VIP-AB12"
-              autoCapitalize="characters"
-              disabled={isInputLocked}
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 12,
-                border: "1px solid #cbd5e1",
-                fontSize: 15,
-                boxSizing: "border-box",
-                backgroundColor: isInputLocked ? "#e2e8f0" : "#ffffff",
-                color: isInputLocked ? "#64748b" : "#0f172a",
-              }}
-            />
+            {canUsePriority ? (
+              <input
+                value={supportCode}
+                onChange={(e) => setSupportCode(e.target.value)}
+                placeholder="優先コード（任意） 例: VIP-AB12"
+                autoCapitalize="characters"
+                disabled={isInputLocked}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  fontSize: 15,
+                  boxSizing: "border-box",
+                  backgroundColor: isInputLocked ? "#e2e8f0" : "#ffffff",
+                  color: isInputLocked ? "#64748b" : "#0f172a",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: 13,
+                }}
+              >
+                現在のプランでは優先コード機能は無効です（無料版）。
+              </div>
+            )}
 
             <button
               onClick={() => void joinQueue()}

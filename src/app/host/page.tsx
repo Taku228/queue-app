@@ -993,6 +993,7 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
+  const canUsePriority = ENABLE_PRIORITY_FEATURES && planLimit.canUsePriority;
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;

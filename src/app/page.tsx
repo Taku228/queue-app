@@ -1,18 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function HomePage() {
-  const [baseUrl, setBaseUrl] = useState("");
+  const [baseUrl, setBaseUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
 
-  useEffect(() => {
     const saved = localStorage.getItem("app_base_url");
-    if (saved) {
-      setBaseUrl(saved);
-    } else {
-      setBaseUrl(window.location.origin);
-    }
-  }, []);
+    return saved ?? window.location.origin;
+  });
 
   const viewerUrl = `${baseUrl}/viewer`;
   const hostUrl = `${baseUrl}/host`;
@@ -140,10 +136,10 @@ export default function HomePage() {
               onClick={() => copy(viewerUrl)}
               style={buttonBlue}
             >
-              コピー
+              コピ
             </button>
 
-            <a href={viewerUrl} target="_blank" style={buttonGray}>
+            <a href={viewerUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>
@@ -174,7 +170,7 @@ export default function HomePage() {
               コピー
             </button>
 
-            <a href={overlayUrl} target="_blank" style={buttonGray}>
+            <a href={overlayUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>
@@ -206,7 +202,7 @@ export default function HomePage() {
               コピー
             </button>
 
-            <a href={hostUrl} target="_blank" style={buttonGray}>
+            <a href={hostUrl} target="_blank" rel="noopener noreferrer" style={buttonGray}>
               開く
             </a>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { db } from "../../lib/firebase";
+import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
 import {
   addDoc,
   collection,
@@ -16,6 +16,10 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  participantToken: string;
+  priorityScore?: number;
+  entryType?: "normal" | "priority";
+  redeemedCode?: string;
 };
 
 type ActivePlayer = {
@@ -30,6 +34,7 @@ type QueueSettings = {
 };
 
 type MessageType = "success" | "error" | "info";
+type PlanType = "free" | "pro" | "business";
 
 const DEFAULT_SETTINGS: QueueSettings = {
   maxActivePlayers: 2,
@@ -40,6 +45,14 @@ const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
 const normalizeName = (name: string) => name.trim().toLowerCase();
+const PARTICIPANT_TOKEN_KEY = "queue_participant_token";
+
+const generateParticipantToken = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `participant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 export default function ViewerPage() {
   const [name, setName] = useState("");
@@ -53,6 +66,11 @@ export default function ViewerPage() {
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [myName, setMyName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [participantToken, setParticipantToken] = useState("");
+  // Backward-compatible plan state for partially merged branches that still reference setPlan.
+  const [plan, setPlan] = useState<PlanType>("free");
+  const planCompatBindings = { plan, setPlan };
+  void planCompatBindings;
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -62,26 +80,44 @@ export default function ViewerPage() {
   };
 
   useEffect(() => {
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
     const savedName = localStorage.getItem("queue_my_name");
     if (savedName) {
       setMyName(savedName);
       setName(savedName);
     }
+    const savedToken = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
+    if (savedToken) {
+      setParticipantToken(savedToken);
+    } else {
+      const newToken = generateParticipantToken();
+      localStorage.setItem(PARTICIPANT_TOKEN_KEY, newToken);
+      setParticipantToken(newToken);
+    }
 
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              participantToken: typeof raw.participantToken === "string" ? raw.participantToken : "",
+            };
+          })
+          .sort((a, b) => a.createdAt - b.createdAt);
 
         setQueue(data);
       },
@@ -255,18 +291,26 @@ export default function ViewerPage() {
       const alreadyInQueue = queue.some(
         (user) => user.name.trim().toLowerCase() === normalizedTrimmedName
       );
+      const alreadyInQueueByToken =
+        participantToken !== "" &&
+        queue.some((user) => user.participantToken === participantToken);
 
       const alreadyActive = activePlayers.some(
         (player) => player.name.trim().toLowerCase() === normalizedTrimmedName
       );
 
-      if (alreadyInQueue || alreadyActive) {
+      if (alreadyInQueue || alreadyActive || alreadyInQueueByToken) {
         setMyName(trimmedName);
         localStorage.setItem("queue_my_name", trimmedName);
         setName(trimmedName);
 
         if (alreadyActive) {
           setStatusMessage("その名前は現在プレイ中です。", "info");
+        } else if (alreadyInQueueByToken) {
+          setStatusMessage(
+            "この端末はすでに待機列に参加済みです。名前を変えての再参加はできません。",
+            "info"
+          );
         } else {
           setStatusMessage("その名前はすでに待機列に参加しています。", "info");
         }
@@ -301,6 +345,7 @@ export default function ViewerPage() {
       await addDoc(collection(db, "queue"), {
         name: trimmedName,
         createdAt: Date.now(),
+        participantToken,
       });
 
       setMyName(trimmedName);
@@ -311,6 +356,13 @@ export default function ViewerPage() {
       console.error(error);
 
       if (error instanceof Error) {
+        if (error.message.includes("permission-denied")) {
+          setStatusMessage(
+            "権限エラーです。Firestoreルールで queue への追加許可が必要です。",
+            "error"
+          );
+          return;
+        }
         setStatusMessage(`エラー: ${error.message}`, "error");
       } else {
         setStatusMessage("参加処理でエラーが発生しました。", "error");
@@ -362,6 +414,45 @@ export default function ViewerPage() {
           backgroundColor: "#fef3c7",
           color: "#92400e",
         };
+
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 680,
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 24,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+          }}
+        >
+          <h1 style={{ fontSize: 26, margin: "0 0 8px 0" }}>
+            現在セットアップ中です
+          </h1>
+          <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
+            配信者が Firebase 設定を完了すると、ここから参加できるようになります。
+            {firebaseClientInitError ? (
+              <>
+                <br />
+                初期化エラー: {firebaseClientInitError}
+              </>
+            ) : null}
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -607,6 +698,8 @@ export default function ViewerPage() {
               padding: "10px 12px",
             }}
           >
+            同一端末から名前を変えての多重参加はできません。
+            <br />
             安全運用のため、待機列からの削除は配信者側で行います。
           </div>
         </div>

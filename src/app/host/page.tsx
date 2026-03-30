@@ -992,6 +992,7 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
+  const canUsePriority = subscription.plan !== "free";
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;
@@ -1536,7 +1537,8 @@ export default function HostPage() {
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
               現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
-              {planLimit.maxActivePlayers} 人
+              {planLimit.maxActivePlayers} 人 / 優先コード想定:{" "}
+              {canUsePriority ? "有料プラン" : "無料プラン"}
             </div>
           </div>
 

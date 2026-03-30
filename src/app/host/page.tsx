@@ -18,6 +18,8 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -459,6 +461,151 @@ export default function HostPage() {
       setStatusMessage("設定の保存に失敗しました。", "error");
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const createPriorityCode = async () => {
+    if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      return;
+    }
+
+    const label = codeLabelInput.trim();
+    const priceYen = Number(codePriceInput);
+    const remainingUses = Number(codeUsesInput);
+
+    if (!label) {
+      setStatusMessage("チケット名を入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(priceYen) || priceYen <= 0) {
+      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
+      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    const code = `VIP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    setIsProcessing(true);
+    try {
+      const existing = await getDoc(doc(db, "priorityCodes", code));
+      if (existing.exists()) {
+        setStatusMessage("コード生成に失敗しました。再試行してください。", "error");
+        return;
+      }
+
+      await setDoc(doc(db, "priorityCodes", code), {
+        label,
+        priceYen,
+        remainingUses,
+        redeemedCount: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        createdBy: user?.uid ?? "",
+      });
+
+      setStatusMessage(`優先コード ${code} を発行しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("優先コードの発行に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const issuePriorityTicketForBuyer = async () => {
+    if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では購入者向けコード発行は利用できません。", "error");
+      return;
+    }
+
+    const buyerName = buyerNameInput.trim();
+    if (!buyerName) {
+      setStatusMessage("購入者名を入力してください。", "error");
+      return;
+    }
+
+    const priceYen = Number(codePriceInput);
+    const remainingUses = Number(codeUsesInput);
+
+    if (!Number.isInteger(priceYen) || priceYen <= 0) {
+      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
+      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    const code = `VIP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    setIsProcessing(true);
+    try {
+      await setDoc(doc(db, "priorityCodes", code), {
+        label: `${buyerName}さん専用`,
+        priceYen,
+        remainingUses,
+        redeemedCount: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        createdBy: user?.uid ?? "",
+        buyerName,
+      });
+
+      const message = [
+        `${buyerName}さん、購入ありがとうございます！`,
+        `優先参加コード: ${code}`,
+        `利用可能回数: ${remainingUses} 回`,
+        "viewerページでコード入力して参加してください。",
+      ].join("\n");
+
+      await navigator.clipboard.writeText(message);
+      setBuyerNameInput("");
+      setStatusMessage(
+        `購入者向けコード ${code} を発行し、案内文をコピーしました。`,
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("購入者向けコードの発行に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const togglePriorityCode = async (code: string, nextActive: boolean) => {
+    if (!isHost || isProcessing) return;
+    if (!canUsePriority) {
+      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      await setDoc(
+        doc(db, "priorityCodes", code),
+        { isActive: nextActive, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage(
+        nextActive
+          ? `${code} を有効化しました。`
+          : `${code} を停止しました。`,
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("コード状態の更新に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -1961,6 +2108,20 @@ export default function HostPage() {
                       }}
                     >
                       {index + 1}：{user.name}
+                      {user.entryType === "priority" && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 11,
+                            padding: "3px 7px",
+                            borderRadius: 9999,
+                            backgroundColor: "#fef3c7",
+                            color: "#92400e",
+                          }}
+                        >
+                          PRIORITY
+                        </span>
+                      )}
                     </div>
 
                     <button

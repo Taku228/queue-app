@@ -7,7 +7,6 @@ import {
   firebaseClientInitError,
   isFirebaseConfigured,
 } from "../../lib/firebase";
-import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -32,27 +31,7 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
-  priorityScore: number;
-  entryType: "normal" | "priority";
-  redeemedCode?: string;
-};
-
-type PriorityCode = {
-  code: string;
-  label: string;
-  priceYen: number;
-  remainingUses: number;
-  redeemedCount: number;
-  isActive: boolean;
-  createdAt: number;
-};
-
-type RedemptionLog = {
-  id: string;
-  code: string;
-  viewerName: string;
-  priceYen: number;
-  redeemedAt: number;
+  participantToken?: string;
 };
 
 type ActivePlayer = {
@@ -78,6 +57,11 @@ type SubscriptionPricing = {
   businessMonthlyYen: number;
 };
 
+type OverlayTheme = {
+  cardBackground: string;
+  cardText: string;
+};
+
 const DEFAULT_SETTINGS: QueueSettings = {
   maxActivePlayers: 2,
   maxBattlesPerPlayer: 2,
@@ -85,13 +69,12 @@ const DEFAULT_SETTINGS: QueueSettings = {
 
 const PLAN_LIMITS: Record<
   PlanType,
-  { maxActivePlayers: number; canUsePriority: boolean; label: string }
+  { maxActivePlayers: number; label: string }
 > = {
-  free: { maxActivePlayers: 2, canUsePriority: false, label: "無料版" },
-  pro: { maxActivePlayers: 4, canUsePriority: true, label: "有料版 Pro" },
+  free: { maxActivePlayers: 2, label: "無料版" },
+  pro: { maxActivePlayers: 4, label: "有料版 Pro" },
   business: {
     maxActivePlayers: 8,
-    canUsePriority: true,
     label: "有料版 Business",
   },
 };
@@ -99,6 +82,11 @@ const PLAN_LIMITS: Record<
 const DEFAULT_PRICING: SubscriptionPricing = {
   proMonthlyYen: 980,
   businessMonthlyYen: 2980,
+};
+
+const DEFAULT_OVERLAY_THEME: OverlayTheme = {
+  cardBackground: "rgba(30, 41, 59, 0.62)",
+  cardText: "#ffffff",
 };
 
 const getPlayerStatsId = (name: string) =>
@@ -134,12 +122,6 @@ export default function HostPage() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [priorityCodes, setPriorityCodes] = useState<PriorityCode[]>([]);
-  const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
-  const [codePriceInput, setCodePriceInput] = useState("500");
-  const [codeUsesInput, setCodeUsesInput] = useState("1");
-  const [buyerNameInput, setBuyerNameInput] = useState("");
-  const [redemptionLogs, setRedemptionLogs] = useState<RedemptionLog[]>([]);
   const [subscription, setSubscription] = useState<SubscriptionConfig>({
     plan: "free",
   });
@@ -150,6 +132,8 @@ export default function HostPage() {
   });
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [overlayTheme, setOverlayTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
+  const [isSavingOverlayTheme, setIsSavingOverlayTheme] = useState(false);
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
@@ -184,21 +168,11 @@ export default function HostPage() {
               id: docItem.id,
               name: typeof raw.name === "string" ? raw.name : "",
               createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-              priorityScore:
-                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
-              entryType: (raw.entryType === "priority"
-                ? "priority"
-                : "normal") as "normal" | "priority",
-              redeemedCode:
-                typeof raw.redeemedCode === "string" ? raw.redeemedCode : "",
+              participantToken:
+                typeof raw.participantToken === "string" ? raw.participantToken : "",
             };
           })
-          .sort((a, b) => {
-            if (b.priorityScore !== a.priorityScore) {
-              return b.priorityScore - a.priorityScore;
-            }
-            return a.createdAt - b.createdAt;
-          });
+          .sort((a, b) => a.createdAt - b.createdAt);
 
         setQueue(data);
       },
@@ -297,31 +271,6 @@ export default function HostPage() {
       }
     );
 
-    const unsubscribePriorityCodes = onSnapshot(
-      query(collection(db, "priorityCodes"), orderBy("createdAt", "desc")),
-      (snapshot) => {
-        const codes = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
-          return {
-            code: docItem.id,
-            label: typeof raw.label === "string" ? raw.label : "優先参加チケット",
-            priceYen: typeof raw.priceYen === "number" ? raw.priceYen : 0,
-            remainingUses:
-              typeof raw.remainingUses === "number" ? raw.remainingUses : 0,
-            redeemedCount:
-              typeof raw.redeemedCount === "number" ? raw.redeemedCount : 0,
-            isActive: raw.isActive !== false,
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-          } satisfies PriorityCode;
-        });
-        setPriorityCodes(codes);
-      },
-      (error) => {
-        console.error("host priorityCodes onSnapshot error:", error);
-        setStatusMessage("優先コードの読み込みに失敗しました。", "error");
-      }
-    );
-
     const unsubscribeSubscription = onSnapshot(
       doc(db, "config", "subscription"),
       (snapshot) => {
@@ -374,28 +323,28 @@ export default function HostPage() {
       }
     );
 
-    const unsubscribeRedemptionLogs = onSnapshot(
-      query(
-        collection(db, "priorityCodeRedemptions"),
-        orderBy("redeemedAt", "desc"),
-        limit(20)
-      ),
+    const unsubscribeOverlayTheme = onSnapshot(
+      doc(db, "config", "overlayTheme"),
       (snapshot) => {
-        const logs = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
-          return {
-            id: docItem.id,
-            code: typeof raw.code === "string" ? raw.code : "",
-            viewerName: typeof raw.viewerName === "string" ? raw.viewerName : "",
-            priceYen: typeof raw.priceYen === "number" ? raw.priceYen : 0,
-            redeemedAt: typeof raw.redeemedAt === "number" ? raw.redeemedAt : 0,
-          } satisfies RedemptionLog;
+        if (!snapshot.exists()) {
+          setOverlayTheme(DEFAULT_OVERLAY_THEME);
+          return;
+        }
+        const raw = snapshot.data();
+        setOverlayTheme({
+          cardBackground:
+            typeof raw.cardBackground === "string" && raw.cardBackground.trim()
+              ? raw.cardBackground
+              : DEFAULT_OVERLAY_THEME.cardBackground,
+          cardText:
+            typeof raw.cardText === "string" && raw.cardText.trim()
+              ? raw.cardText
+              : DEFAULT_OVERLAY_THEME.cardText,
         });
-        setRedemptionLogs(logs);
       },
       (error) => {
-        console.error("host redemptionLogs onSnapshot error:", error);
-        setStatusMessage("販売ログの読み込みに失敗しました。", "error");
+        console.error("host overlayTheme onSnapshot error:", error);
+        setStatusMessage("OBSカラー設定の読み込みに失敗しました。", "error");
       }
     );
 
@@ -405,10 +354,9 @@ export default function HostPage() {
       unsubscribeActivePlayers();
       unsubscribeSettings();
       unsubscribePlayerStats();
-      unsubscribePriorityCodes();
-      unsubscribeRedemptionLogs();
       unsubscribeSubscription();
       unsubscribePricing();
+      unsubscribeOverlayTheme();
     };
   }, []);
 
@@ -1045,12 +993,6 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
-  const canUsePriority = ENABLE_PRIORITY_FEATURES && planLimit.canUsePriority;
-  const totalPriorityRevenue = useMemo(() => {
-    return redemptionLogs.reduce((sum, item) => sum + item.priceYen, 0);
-  }, [redemptionLogs]);
-  const totalPrioritySales = redemptionLogs.length;
-  const activeCodeCount = priorityCodes.filter((item) => item.isActive).length;
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;
@@ -1112,31 +1054,31 @@ export default function HostPage() {
     }
   };
 
-  const copySalesReport = async () => {
-    if (!canUsePriority) {
-      setStatusMessage("無料版では売上レポートを利用できません。", "error");
+  const saveOverlayTheme = async () => {
+    if (!isHost || isSavingOverlayTheme) return;
+    if (subscription.plan === "free") {
+      setStatusMessage("OBSカード色変更は有料プラン（Pro以上）で利用できます。", "error");
       return;
     }
-    const lines = [
-      "優先参加チケット 売上レポート",
-      `発行中コード: ${priorityCodes.length} (有効: ${activeCodeCount})`,
-      `直近販売件数: ${totalPrioritySales}`,
-      `直近売上見込み: ¥${totalPriorityRevenue.toLocaleString()}`,
-      "",
-      ...redemptionLogs.slice(0, 10).map((item) => {
-        const date = item.redeemedAt
-          ? new Date(item.redeemedAt).toLocaleString("ja-JP")
-          : "-";
-        return `${date} / ${item.viewerName} / ${item.code} / ¥${item.priceYen.toLocaleString()}`;
-      }),
-    ];
 
+    if (!overlayTheme.cardBackground.trim() || !overlayTheme.cardText.trim()) {
+      setStatusMessage("OBSカラーは未入力にできません。", "error");
+      return;
+    }
+
+    setIsSavingOverlayTheme(true);
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      setStatusMessage("売上レポートをコピーしました。", "success");
+      await setDoc(
+        doc(db, "config", "overlayTheme"),
+        { ...overlayTheme, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage("OBSカード色を保存しました。", "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("レポートのコピーに失敗しました。", "error");
+      setStatusMessage("OBSカード色の保存に失敗しました。", "error");
+    } finally {
+      setIsSavingOverlayTheme(false);
     }
   };
 
@@ -1537,30 +1479,10 @@ export default function HostPage() {
             </div>
           </div>
 
-          {ENABLE_PRIORITY_FEATURES && (
-            <div
-              style={{
-                backgroundColor: "#f5f3ff",
-                color: "#5b21b6",
-                borderRadius: 18,
-                padding: 18,
-              }}
-            >
-              <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
-                PRIORITY SALES
-              </div>
-              <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
-                有効コード: {activeCodeCount}件
-                <br />
-                直近販売: {totalPrioritySales}件
-                <br />
-                直近売上: ¥{totalPriorityRevenue.toLocaleString()}
-              </div>
-            </div>
-          )}
+
         </div>
 
-        {isSettingsOpen && ENABLE_PRIORITY_FEATURES && (
+        {isSettingsOpen && (
           <div
             style={{
               backgroundColor: "#ffffff",
@@ -1615,8 +1537,7 @@ export default function HostPage() {
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
               現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
-              {planLimit.maxActivePlayers} 人 / 優先コード:{" "}
-              {canUsePriority ? "利用可" : "利用不可"}
+              {planLimit.maxActivePlayers} 人
             </div>
           </div>
 
@@ -1683,6 +1604,80 @@ export default function HostPage() {
               }}
             >
               {isSavingPricing ? "保存中..." : "料金を保存"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+              OBSカード色（Pro / Business）
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              <input
+                value={overlayTheme.cardBackground}
+                onChange={(e) =>
+                  setOverlayTheme((prev) => ({
+                    ...prev,
+                    cardBackground: e.target.value,
+                  }))
+                }
+                placeholder="カード背景色 (例: rgba(30,41,59,0.62))"
+                style={inputStyle}
+                disabled={subscription.plan === "free"}
+              />
+              <input
+                value={overlayTheme.cardText}
+                onChange={(e) =>
+                  setOverlayTheme((prev) => ({
+                    ...prev,
+                    cardText: e.target.value,
+                  }))
+                }
+                placeholder="カード文字色 (例: #ffffff)"
+                style={inputStyle}
+                disabled={subscription.plan === "free"}
+              />
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              Freeプランでは編集不可です。現在値: 背景 {overlayTheme.cardBackground} / 文字{" "}
+              {overlayTheme.cardText}
+            </div>
+            <button
+              onClick={() => void saveOverlayTheme()}
+              disabled={isSavingOverlayTheme || subscription.plan === "free"}
+              style={{
+                marginTop: 8,
+                minHeight: 36,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor:
+                  isSavingOverlayTheme || subscription.plan === "free"
+                    ? "#cbd5e1"
+                    : "#0f766e",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: "bold",
+                cursor:
+                  isSavingOverlayTheme || subscription.plan === "free"
+                    ? "default"
+                    : "pointer",
+              }}
+            >
+              {isSavingOverlayTheme ? "保存中..." : "OBSカラーを保存"}
             </button>
           </div>
 
@@ -1762,269 +1757,6 @@ export default function HostPage() {
           >
             {isSavingSettings ? "保存中..." : "設定を保存"}
           </button>
-          </div>
-        )}
-
-        {isSettingsOpen && (
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: 20,
-              padding: 18,
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-            }}
-          >
-          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
-            収益化: 優先参加チケット
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 10,
-              marginBottom: 10,
-            }}
-          >
-            <input
-              value={codeLabelInput}
-              onChange={(e) => setCodeLabelInput(e.target.value)}
-              placeholder="チケット名"
-              style={inputStyle}
-            />
-            <input
-              value={codePriceInput}
-              onChange={(e) => setCodePriceInput(e.target.value)}
-              inputMode="numeric"
-              placeholder="価格(円)"
-              style={inputStyle}
-            />
-            <input
-              value={codeUsesInput}
-              onChange={(e) => setCodeUsesInput(e.target.value)}
-              inputMode="numeric"
-              placeholder="利用可能回数"
-              style={inputStyle}
-            />
-          </div>
-
-          <button
-            onClick={() => void createPriorityCode()}
-            disabled={isProcessing || !canUsePriority}
-            style={{
-              minHeight: 42,
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "none",
-              backgroundColor:
-                isProcessing || !canUsePriority ? "#93c5fd" : "#2563eb",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: "bold",
-              cursor: isProcessing || !canUsePriority ? "default" : "pointer",
-            }}
-          >
-            優先コードを発行
-          </button>
-
-          {!canUsePriority && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              無料版では優先コード機能は利用できません。Pro以上で解放されます。
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {[300, 500, 1000, 3000].map((price) => (
-              <button
-                key={price}
-                onClick={() => setCodePriceInput(String(price))}
-                style={{
-                  minHeight: 32,
-                  padding: "6px 10px",
-                  borderRadius: 9999,
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#fff",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                ¥{price}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-            {priorityCodes.length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: 14 }}>
-                まだ優先コードはありません。
-              </div>
-            ) : (
-              priorityCodes.map((item) => (
-                <div
-                  key={item.code}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    padding: 12,
-                    backgroundColor: "#f8fafc",
-                  }}
-                >
-                  <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                    {item.code} / {item.label}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7 }}>
-                    価格: ¥{item.priceYen.toLocaleString()} / 残り利用回数:{" "}
-                    {item.remainingUses} / 使用回数: {item.redeemedCount}
-                  </div>
-                  <button
-                    onClick={() => void togglePriorityCode(item.code, !item.isActive)}
-                    disabled={isProcessing || !canUsePriority}
-                    style={{
-                      marginTop: 8,
-                      minHeight: 34,
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      border: "none",
-                      backgroundColor: item.isActive ? "#ef4444" : "#16a34a",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: "bold",
-                      cursor:
-                        isProcessing || !canUsePriority ? "default" : "pointer",
-                    }}
-                  >
-                    {item.isActive ? "停止する" : "再開する"}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              borderTop: "1px solid #e2e8f0",
-              paddingTop: 12,
-            }}
-          >
-            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
-              決済反映（手動ワークフロー）
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 8,
-                alignItems: "center",
-              }}
-            >
-              <input
-                value={buyerNameInput}
-                onChange={(e) => setBuyerNameInput(e.target.value)}
-                placeholder="購入者名（例: たろう）"
-                style={inputStyle}
-              />
-              <button
-                onClick={() => void issuePriorityTicketForBuyer()}
-                disabled={isProcessing || !canUsePriority}
-                style={{
-                  minHeight: 40,
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "none",
-                  backgroundColor: isProcessing ? "#c4b5fd" : "#7c3aed",
-                  color: "#fff",
-                  fontSize: 13,
-                  fontWeight: "bold",
-                  cursor: isProcessing || !canUsePriority ? "default" : "pointer",
-                }}
-              >
-                購入者コード発行
-              </button>
-            </div>
-
-            <div
-              style={{
-                marginTop: 8,
-                color: "#64748b",
-                fontSize: 12,
-                lineHeight: 1.7,
-              }}
-            >
-              決済を確認したら、このボタンで即コード発行 → 案内文をコピーできます。
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              borderTop: "1px solid #e2e8f0",
-              paddingTop: 12,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ fontWeight: "bold" }}>直近販売ログ</div>
-              <button
-                onClick={() => void copySalesReport()}
-                disabled={!canUsePriority}
-                style={{
-                  minHeight: 34,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  backgroundColor: "#7c3aed",
-                  color: "#fff",
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  cursor: !canUsePriority ? "default" : "pointer",
-                  opacity: !canUsePriority ? 0.65 : 1,
-                }}
-              >
-                レポートをコピー
-              </button>
-            </div>
-
-            {redemptionLogs.length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: 13 }}>
-                まだ販売ログはありません。
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 6 }}>
-                {redemptionLogs.slice(0, 8).map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      borderRadius: 10,
-                      border: "1px solid #e2e8f0",
-                      backgroundColor: "#f8fafc",
-                      padding: "8px 10px",
-                      fontSize: 12,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    {item.redeemedAt
-                      ? new Date(item.redeemedAt).toLocaleString("ja-JP")
-                      : "-"}{" "}
-                    / {item.viewerName} / {item.code} / ¥
-                    {item.priceYen.toLocaleString()}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              自動反映: `licenses/{user.uid}.plan` を更新するとプランへ反映されます。
-            </div>
           </div>
         )}
 

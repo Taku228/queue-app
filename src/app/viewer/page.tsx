@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
-import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   addDoc,
   collection,
@@ -18,8 +17,7 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
-  priorityScore: number;
-  entryType: "normal" | "priority";
+  participantToken: string;
 };
 
 type ActivePlayer = {
@@ -45,6 +43,14 @@ const getPlayerStatsId = (name: string) =>
   encodeURIComponent(name.trim().toLowerCase());
 
 const normalizeName = (name: string) => name.trim().toLowerCase();
+const PARTICIPANT_TOKEN_KEY = "queue_participant_token";
+
+const generateParticipantToken = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `participant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 export default function ViewerPage() {
   const [name, setName] = useState("");
@@ -59,7 +65,7 @@ export default function ViewerPage() {
   const [myName, setMyName] = useState("");
   const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [plan, setPlan] = useState<PlanType>("free");
+  const [participantToken, setParticipantToken] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -78,6 +84,14 @@ export default function ViewerPage() {
       setMyName(savedName);
       setName(savedName);
     }
+    const savedToken = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
+    if (savedToken) {
+      setParticipantToken(savedToken);
+    } else {
+      const newToken = generateParticipantToken();
+      localStorage.setItem(PARTICIPANT_TOKEN_KEY, newToken);
+      setParticipantToken(newToken);
+    }
 
     const queueQuery = query(
       collection(db, "queue"),
@@ -95,19 +109,11 @@ export default function ViewerPage() {
               id: docItem.id,
               name: typeof raw.name === "string" ? raw.name : "",
               createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-              priorityScore:
-                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
-              entryType: (raw.entryType === "priority"
-                ? "priority"
-                : "normal") as "normal" | "priority",
+              participantToken:
+                typeof raw.participantToken === "string" ? raw.participantToken : "",
             };
           })
-          .sort((a, b) => {
-            if (b.priorityScore !== a.priorityScore) {
-              return b.priorityScore - a.priorityScore;
-            }
-            return a.createdAt - b.createdAt;
-          });
+          .sort((a, b) => a.createdAt - b.createdAt);
 
         setQueue(data);
       },
@@ -302,18 +308,26 @@ export default function ViewerPage() {
       const alreadyInQueue = queue.some(
         (user) => user.name.trim().toLowerCase() === normalizedTrimmedName
       );
+      const alreadyInQueueByToken =
+        participantToken !== "" &&
+        queue.some((user) => user.participantToken === participantToken);
 
       const alreadyActive = activePlayers.some(
         (player) => player.name.trim().toLowerCase() === normalizedTrimmedName
       );
 
-      if (alreadyInQueue || alreadyActive) {
+      if (alreadyInQueue || alreadyActive || alreadyInQueueByToken) {
         setMyName(trimmedName);
         localStorage.setItem("queue_my_name", trimmedName);
         setName(trimmedName);
 
         if (alreadyActive) {
           setStatusMessage("その名前は現在プレイ中です。", "info");
+        } else if (alreadyInQueueByToken) {
+          setStatusMessage(
+            "この端末はすでに待機列に参加済みです。名前を変えての再参加はできません。",
+            "info"
+          );
         } else {
           setStatusMessage("その名前はすでに待機列に参加しています。", "info");
         }
@@ -400,9 +414,7 @@ export default function ViewerPage() {
       await addDoc(collection(db, "queue"), {
         name: trimmedName,
         createdAt: Date.now(),
-        priorityScore: isPriorityEntry ? 1 : 0,
-        entryType: isPriorityEntry ? "priority" : "normal",
-        redeemedCode,
+        participantToken,
       });
 
       if (isPriorityEntry) {
@@ -801,12 +813,8 @@ export default function ViewerPage() {
               padding: "10px 12px",
             }}
           >
-            {ENABLE_PRIORITY_FEATURES && (
-              <>
-                優先コードは配信者から購入した方のみ利用できます。
-                <br />
-              </>
-            )}
+            同一端末から名前を変えての多重参加はできません。
+            <br />
             安全運用のため、待機列からの削除は配信者側で行います。
           </div>
         </div>

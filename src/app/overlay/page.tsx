@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
-import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   collection,
   doc,
@@ -25,6 +24,16 @@ type ActivePlayer = {
   joinedTotalBattles: number;
 };
 
+type OverlayTheme = {
+  cardBackground: string;
+  cardText: string;
+};
+
+const DEFAULT_OVERLAY_THEME: OverlayTheme = {
+  cardBackground: "rgba(30, 41, 59, 0.62)",
+  cardText: "#ffffff",
+};
+
 const normalizeName = (name: string) => name.trim().toLowerCase();
 
 export default function OverlayPage() {
@@ -33,6 +42,7 @@ export default function OverlayPage() {
   const [playerStatsMap, setPlayerStatsMap] = useState<Record<string, number>>(
     {}
   );
+  const [theme, setTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
 
   useEffect(() => {
     if (!isFirebaseConfigured || firebaseClientInitError) {
@@ -55,19 +65,9 @@ export default function OverlayPage() {
               id: docItem.id,
               name: typeof raw.name === "string" ? raw.name : "",
               createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-              priorityScore:
-                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
-              entryType: (raw.entryType === "priority"
-                ? "priority"
-                : "normal") as "normal" | "priority",
             };
           })
-          .sort((a, b) => {
-            if (b.priorityScore !== a.priorityScore) {
-              return b.priorityScore - a.priorityScore;
-            }
-            return a.createdAt - b.createdAt;
-          });
+          .sort((a, b) => a.createdAt - b.createdAt);
 
         setQueue(data);
       },
@@ -128,10 +128,32 @@ export default function OverlayPage() {
       }
     );
 
+    const unsubscribeOverlayTheme = onSnapshot(
+      doc(db, "config", "overlayTheme"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setTheme(DEFAULT_OVERLAY_THEME);
+          return;
+        }
+        const raw = snapshot.data();
+        setTheme({
+          cardBackground:
+            typeof raw.cardBackground === "string" && raw.cardBackground.trim()
+              ? raw.cardBackground
+              : DEFAULT_OVERLAY_THEME.cardBackground,
+          cardText:
+            typeof raw.cardText === "string" && raw.cardText.trim()
+              ? raw.cardText
+              : DEFAULT_OVERLAY_THEME.cardText,
+        });
+      }
+    );
+
     return () => {
       unsubscribeQueue();
       unsubscribeActivePlayers();
       unsubscribePlayerStats();
+      unsubscribeOverlayTheme();
     };
   }, []);
 
@@ -218,7 +240,7 @@ export default function OverlayPage() {
             style={{
               borderRadius: 24,
               padding: "22px 26px",
-              background: "rgba(15, 23, 42, 0.68)",
+              background: theme.cardBackground,
               border: "1px solid rgba(255,255,255,0.14)",
               boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
               backdropFilter: "blur(6px)",
@@ -229,7 +251,7 @@ export default function OverlayPage() {
               style={{
                 fontSize: 22,
                 fontWeight: 800,
-                color: "rgba(255,255,255,0.82)",
+                color: theme.cardText,
                 marginBottom: 8,
                 letterSpacing: "0.04em",
                 textShadow: "0 2px 10px rgba(0,0,0,0.9)",
@@ -244,7 +266,7 @@ export default function OverlayPage() {
                   fontSize: 54,
                   fontWeight: 900,
                   lineHeight: 1.08,
-                  color: "#ffffff",
+                  color: theme.cardText,
                   textShadow:
                     "0 4px 18px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.7)",
                 }}
@@ -274,7 +296,7 @@ export default function OverlayPage() {
                         fontSize: 48,
                         fontWeight: 900,
                         lineHeight: 1.08,
-                        color: "#ffffff",
+                        color: theme.cardText,
                         wordBreak: "break-word",
                         textShadow:
                           "0 4px 18px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.7)",
@@ -319,7 +341,7 @@ export default function OverlayPage() {
                 style={{
                   borderRadius: 22,
                   padding: "18px 22px",
-                  background: "rgba(30, 41, 59, 0.62)",
+                  background: theme.cardBackground,
                   border: "1px solid rgba(255,255,255,0.12)",
                   boxShadow: "0 14px 32px rgba(0,0,0,0.28)",
                   backdropFilter: "blur(6px)",
@@ -330,7 +352,7 @@ export default function OverlayPage() {
                   style={{
                     fontSize: 18,
                     fontWeight: 800,
-                    color: "rgba(255,255,255,0.78)",
+                    color: theme.cardText,
                     marginBottom: 6,
                     letterSpacing: "0.03em",
                     textShadow: "0 2px 10px rgba(0,0,0,0.9)",
@@ -344,7 +366,7 @@ export default function OverlayPage() {
                     fontSize: 36,
                     fontWeight: 900,
                     lineHeight: 1.15,
-                    color: "#ffffff",
+                    color: theme.cardText,
                     wordBreak: "break-word",
                     textShadow:
                       "0 4px 16px rgba(0,0,0,0.92), 0 0 8px rgba(0,0,0,0.65)",
@@ -374,7 +396,7 @@ export default function OverlayPage() {
                 style={{
                   borderRadius: 22,
                   padding: "18px 22px",
-                  background: "rgba(30, 41, 59, 0.62)",
+                  background: theme.cardBackground,
                   border: "1px solid rgba(255,255,255,0.12)",
                   boxShadow: "0 14px 32px rgba(0,0,0,0.28)",
                   backdropFilter: "blur(6px)",
@@ -469,7 +491,7 @@ export default function OverlayPage() {
               style={{
                 borderRadius: 22,
                 padding: "18px 22px",
-                background: "rgba(30, 41, 59, 0.62)",
+                background: theme.cardBackground,
                 border: "1px solid rgba(255,255,255,0.12)",
                 boxShadow: "0 14px 32px rgba(0,0,0,0.28)",
                 backdropFilter: "blur(6px)",

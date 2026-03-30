@@ -64,6 +64,18 @@ npm run dev
 - `priorityCodes`（優先チケット機能）
 - `priorityCodeRedemptions`（販売ログ）
 
+※待機列の並び順はアプリ側で `priorityScore -> createdAt` に整列しているため、
+複合インデックス未作成でも動作します。
+
+### 3) Firestore Rules（重要）
+
+viewer から参加できない場合、ほぼ Firestore Rules が原因です。  
+`firestore.rules.example` をベースに Firebase Console へ反映してください。
+
+- `queue` への `create` を viewer に許可
+- `config` / `status` / `playerStats` / `priorityCodes` は host のみ書き込み許可
+- `priorityCodeRedemptions` は viewer の create を許可（閲覧は host）
+
 ## 収益化を伸ばす実運用アイデア
 
 1. チケット単価を段階化（500円 / 1000円 / 3000円）  

@@ -66,6 +66,10 @@ export default function ViewerPage() {
   };
 
   useEffect(() => {
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
     const savedName = localStorage.getItem("queue_my_name");
     if (savedName) {
       setMyName(savedName);
@@ -74,27 +78,33 @@ export default function ViewerPage() {
 
     const queueQuery = query(
       collection(db, "queue"),
-      orderBy("priorityScore", "desc"),
       orderBy("createdAt")
     );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-            priorityScore:
-              typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
-            entryType: (raw.entryType === "priority"
-              ? "priority"
-              : "normal") as "normal" | "priority",
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              priorityScore:
+                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+              entryType: (raw.entryType === "priority"
+                ? "priority"
+                : "normal") as "normal" | "priority",
+            };
+          })
+          .sort((a, b) => {
+            if (b.priorityScore !== a.priorityScore) {
+              return b.priorityScore - a.priorityScore;
+            }
+            return a.createdAt - b.createdAt;
+          });
 
         setQueue(data);
       },
@@ -385,6 +395,13 @@ export default function ViewerPage() {
       console.error(error);
 
       if (error instanceof Error) {
+        if (error.message.includes("permission-denied")) {
+          setStatusMessage(
+            "権限エラーです。Firestoreルールで queue への追加許可が必要です。",
+            "error"
+          );
+          return;
+        }
         setStatusMessage(`エラー: ${error.message}`, "error");
       } else {
         setStatusMessage("参加処理でエラーが発生しました。", "error");

@@ -120,35 +120,45 @@ export default function HostPage() {
   };
 
   useEffect(() => {
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
     });
 
     const queueQuery = query(
       collection(db, "queue"),
-      orderBy("priorityScore", "desc"),
       orderBy("createdAt")
     );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-            priorityScore:
-              typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
-            entryType: (raw.entryType === "priority"
-              ? "priority"
-              : "normal") as "normal" | "priority",
-            redeemedCode:
-              typeof raw.redeemedCode === "string" ? raw.redeemedCode : "",
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              priorityScore:
+                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+              entryType: (raw.entryType === "priority"
+                ? "priority"
+                : "normal") as "normal" | "priority",
+              redeemedCode:
+                typeof raw.redeemedCode === "string" ? raw.redeemedCode : "",
+            };
+          })
+          .sort((a, b) => {
+            if (b.priorityScore !== a.priorityScore) {
+              return b.priorityScore - a.priorityScore;
+            }
+            return a.createdAt - b.createdAt;
+          });
 
         setQueue(data);
       },

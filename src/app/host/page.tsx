@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { auth, db } from "../../lib/firebase";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { auth, db, isFirebaseConfigured } from "../../lib/firebase";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -13,6 +13,8 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -24,6 +26,27 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  priorityScore: number;
+  entryType: "normal" | "priority";
+  redeemedCode?: string;
+};
+
+type PriorityCode = {
+  code: string;
+  label: string;
+  priceYen: number;
+  remainingUses: number;
+  redeemedCount: number;
+  isActive: boolean;
+  createdAt: number;
+};
+
+type RedemptionLog = {
+  id: string;
+  code: string;
+  viewerName: string;
+  priceYen: number;
+  redeemedAt: number;
 };
 
 type ActivePlayer = {
@@ -49,6 +72,15 @@ const getPlayerStatsId = (name: string) =>
 
 const normalizeName = (name: string) => name.trim().toLowerCase();
 
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  fontSize: 14,
+  boxSizing: "border-box",
+};
+
 export default function HostPage() {
   const [user, setUser] = useState<User | null>(null);
   const [queue, setQueue] = useState<QueueUser[]>([]);
@@ -67,8 +99,15 @@ export default function HostPage() {
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [priorityCodes, setPriorityCodes] = useState<PriorityCode[]>([]);
+  const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
+  const [codePriceInput, setCodePriceInput] = useState("500");
+  const [codeUsesInput, setCodeUsesInput] = useState("1");
+  const [buyerNameInput, setBuyerNameInput] = useState("");
+  const [redemptionLogs, setRedemptionLogs] = useState<RedemptionLog[]>([]);
 
-  const hostUid = process.env.NEXT_PUBLIC_HOST_UID ?? "";
+  const hostUid =
+    process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
 
   const setStatusMessage = (text: string, type: MessageType = "info") => {
     setMessage(text);
@@ -80,7 +119,11 @@ export default function HostPage() {
       setUser(firebaseUser);
     });
 
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("priorityScore", "desc"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
@@ -92,6 +135,13 @@ export default function HostPage() {
             id: docItem.id,
             name: typeof raw.name === "string" ? raw.name : "",
             createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+            priorityScore:
+              typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+            entryType: (raw.entryType === "priority"
+              ? "priority"
+              : "normal") as "normal" | "priority",
+            redeemedCode:
+              typeof raw.redeemedCode === "string" ? raw.redeemedCode : "",
           };
         });
 
@@ -192,12 +242,64 @@ export default function HostPage() {
       }
     );
 
+    const unsubscribePriorityCodes = onSnapshot(
+      query(collection(db, "priorityCodes"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const codes = snapshot.docs.map((docItem) => {
+          const raw = docItem.data();
+          return {
+            code: docItem.id,
+            label: typeof raw.label === "string" ? raw.label : "優先参加チケット",
+            priceYen: typeof raw.priceYen === "number" ? raw.priceYen : 0,
+            remainingUses:
+              typeof raw.remainingUses === "number" ? raw.remainingUses : 0,
+            redeemedCount:
+              typeof raw.redeemedCount === "number" ? raw.redeemedCount : 0,
+            isActive: raw.isActive !== false,
+            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+          } satisfies PriorityCode;
+        });
+        setPriorityCodes(codes);
+      },
+      (error) => {
+        console.error("host priorityCodes onSnapshot error:", error);
+        setStatusMessage("優先コードの読み込みに失敗しました。", "error");
+      }
+    );
+
+    const unsubscribeRedemptionLogs = onSnapshot(
+      query(
+        collection(db, "priorityCodeRedemptions"),
+        orderBy("redeemedAt", "desc"),
+        limit(20)
+      ),
+      (snapshot) => {
+        const logs = snapshot.docs.map((docItem) => {
+          const raw = docItem.data();
+          return {
+            id: docItem.id,
+            code: typeof raw.code === "string" ? raw.code : "",
+            viewerName: typeof raw.viewerName === "string" ? raw.viewerName : "",
+            priceYen: typeof raw.priceYen === "number" ? raw.priceYen : 0,
+            redeemedAt: typeof raw.redeemedAt === "number" ? raw.redeemedAt : 0,
+          } satisfies RedemptionLog;
+        });
+        setRedemptionLogs(logs);
+      },
+      (error) => {
+        console.error("host redemptionLogs onSnapshot error:", error);
+        setStatusMessage("販売ログの読み込みに失敗しました。", "error");
+      }
+    );
+
     return () => {
       unsubscribeAuth();
       unsubscribeQueue();
       unsubscribeActivePlayers();
       unsubscribeSettings();
       unsubscribePlayerStats();
+      unsubscribePriorityCodes();
+      unsubscribeRedemptionLogs();
     };
   }, []);
 
@@ -295,6 +397,139 @@ export default function HostPage() {
       setStatusMessage("設定の保存に失敗しました。", "error");
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const createPriorityCode = async () => {
+    if (!isHost || isProcessing) return;
+
+    const label = codeLabelInput.trim();
+    const priceYen = Number(codePriceInput);
+    const remainingUses = Number(codeUsesInput);
+
+    if (!label) {
+      setStatusMessage("チケット名を入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(priceYen) || priceYen <= 0) {
+      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
+      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    const code = `VIP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    setIsProcessing(true);
+    try {
+      const existing = await getDoc(doc(db, "priorityCodes", code));
+      if (existing.exists()) {
+        setStatusMessage("コード生成に失敗しました。再試行してください。", "error");
+        return;
+      }
+
+      await setDoc(doc(db, "priorityCodes", code), {
+        label,
+        priceYen,
+        remainingUses,
+        redeemedCount: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        createdBy: user?.uid ?? "",
+      });
+
+      setStatusMessage(`優先コード ${code} を発行しました。`, "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("優先コードの発行に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const issuePriorityTicketForBuyer = async () => {
+    if (!isHost || isProcessing) return;
+
+    const buyerName = buyerNameInput.trim();
+    if (!buyerName) {
+      setStatusMessage("購入者名を入力してください。", "error");
+      return;
+    }
+
+    const priceYen = Number(codePriceInput);
+    const remainingUses = Number(codeUsesInput);
+
+    if (!Number.isInteger(priceYen) || priceYen <= 0) {
+      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
+      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      return;
+    }
+
+    const code = `VIP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    setIsProcessing(true);
+    try {
+      await setDoc(doc(db, "priorityCodes", code), {
+        label: `${buyerName}さん専用`,
+        priceYen,
+        remainingUses,
+        redeemedCount: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        createdBy: user?.uid ?? "",
+        buyerName,
+      });
+
+      const message = [
+        `${buyerName}さん、購入ありがとうございます！`,
+        `優先参加コード: ${code}`,
+        `利用可能回数: ${remainingUses} 回`,
+        "viewerページでコード入力して参加してください。",
+      ].join("\n");
+
+      await navigator.clipboard.writeText(message);
+      setBuyerNameInput("");
+      setStatusMessage(
+        `購入者向けコード ${code} を発行し、案内文をコピーしました。`,
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("購入者向けコードの発行に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const togglePriorityCode = async (code: string, nextActive: boolean) => {
+    if (!isHost || isProcessing) return;
+
+    setIsProcessing(true);
+    try {
+      await setDoc(
+        doc(db, "priorityCodes", code),
+        { isActive: nextActive, updatedAt: Date.now() },
+        { merge: true }
+      );
+      setStatusMessage(
+        nextActive
+          ? `${code} を有効化しました。`
+          : `${code} を停止しました。`,
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("コード状態の更新に失敗しました。", "error");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -680,6 +915,69 @@ export default function HostPage() {
   const activeStatusText = useMemo(() => {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
+  const totalPriorityRevenue = useMemo(() => {
+    return redemptionLogs.reduce((sum, item) => sum + item.priceYen, 0);
+  }, [redemptionLogs]);
+  const totalPrioritySales = redemptionLogs.length;
+  const activeCodeCount = priorityCodes.filter((item) => item.isActive).length;
+
+  const copySalesReport = async () => {
+    const lines = [
+      "優先参加チケット 売上レポート",
+      `発行中コード: ${priorityCodes.length} (有効: ${activeCodeCount})`,
+      `直近販売件数: ${totalPrioritySales}`,
+      `直近売上見込み: ¥${totalPriorityRevenue.toLocaleString()}`,
+      "",
+      ...redemptionLogs.slice(0, 10).map((item) => {
+        const date = item.redeemedAt
+          ? new Date(item.redeemedAt).toLocaleString("ja-JP")
+          : "-";
+        return `${date} / ${item.viewerName} / ${item.code} / ¥${item.priceYen.toLocaleString()}`;
+      }),
+    ];
+
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setStatusMessage("売上レポートをコピーしました。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatusMessage("レポートのコピーに失敗しました。", "error");
+    }
+  };
+
+  if (!isFirebaseConfigured) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 680,
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 24,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+          }}
+        >
+          <h1 style={{ fontSize: 26, margin: "0 0 8px 0" }}>
+            Firebase設定が未完了です
+          </h1>
+          <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
+            `.env.local` に Firebase の公開キーを設定すると host 画面が使えるようになります。
+            README の「初回セットアップ」を上から順に進めてください。
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (!user) {
     return (
@@ -950,6 +1248,26 @@ export default function HostPage() {
               最大対戦数: {settings.maxBattlesPerPlayer}戦
             </div>
           </div>
+
+          <div
+            style={{
+              backgroundColor: "#f5f3ff",
+              color: "#5b21b6",
+              borderRadius: 18,
+              padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+              PRIORITY SALES
+            </div>
+            <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
+              有効コード: {activeCodeCount}件
+              <br />
+              直近販売: {totalPrioritySales}件
+              <br />
+              直近売上: ¥{totalPriorityRevenue.toLocaleString()}
+            </div>
+          </div>
         </div>
 
         <div
@@ -1046,6 +1364,254 @@ export default function HostPage() {
           >
             {isSavingSettings ? "保存中..." : "設定を保存"}
           </button>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: "#ffffff",
+            borderRadius: 20,
+            padding: 18,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
+            収益化: 優先参加チケット
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <input
+              value={codeLabelInput}
+              onChange={(e) => setCodeLabelInput(e.target.value)}
+              placeholder="チケット名"
+              style={inputStyle}
+            />
+            <input
+              value={codePriceInput}
+              onChange={(e) => setCodePriceInput(e.target.value)}
+              inputMode="numeric"
+              placeholder="価格(円)"
+              style={inputStyle}
+            />
+            <input
+              value={codeUsesInput}
+              onChange={(e) => setCodeUsesInput(e.target.value)}
+              inputMode="numeric"
+              placeholder="利用可能回数"
+              style={inputStyle}
+            />
+          </div>
+
+          <button
+            onClick={() => void createPriorityCode()}
+            disabled={isProcessing}
+            style={{
+              minHeight: 42,
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: isProcessing ? "#93c5fd" : "#2563eb",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: isProcessing ? "default" : "pointer",
+            }}
+          >
+            優先コードを発行
+          </button>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            {[300, 500, 1000, 3000].map((price) => (
+              <button
+                key={price}
+                onClick={() => setCodePriceInput(String(price))}
+                style={{
+                  minHeight: 32,
+                  padding: "6px 10px",
+                  borderRadius: 9999,
+                  border: "1px solid #cbd5e1",
+                  backgroundColor: "#fff",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                ¥{price}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+            {priorityCodes.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 14 }}>
+                まだ優先コードはありません。
+              </div>
+            ) : (
+              priorityCodes.map((item) => (
+                <div
+                  key={item.code}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: 12,
+                    backgroundColor: "#f8fafc",
+                  }}
+                >
+                  <div style={{ fontWeight: "bold", marginBottom: 4 }}>
+                    {item.code} / {item.label}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7 }}>
+                    価格: ¥{item.priceYen.toLocaleString()} / 残り利用回数:{" "}
+                    {item.remainingUses} / 使用回数: {item.redeemedCount}
+                  </div>
+                  <button
+                    onClick={() => void togglePriorityCode(item.code, !item.isActive)}
+                    disabled={isProcessing}
+                    style={{
+                      marginTop: 8,
+                      minHeight: 34,
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: "none",
+                      backgroundColor: item.isActive ? "#ef4444" : "#16a34a",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      cursor: isProcessing ? "default" : "pointer",
+                    }}
+                  >
+                    {item.isActive ? "停止する" : "再開する"}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+              決済反映（手動ワークフロー）
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={buyerNameInput}
+                onChange={(e) => setBuyerNameInput(e.target.value)}
+                placeholder="購入者名（例: たろう）"
+                style={inputStyle}
+              />
+              <button
+                onClick={() => void issuePriorityTicketForBuyer()}
+                disabled={isProcessing}
+                style={{
+                  minHeight: 40,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor: isProcessing ? "#c4b5fd" : "#7c3aed",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: "bold",
+                  cursor: isProcessing ? "default" : "pointer",
+                }}
+              >
+                購入者コード発行
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                color: "#64748b",
+                fontSize: 12,
+                lineHeight: 1.7,
+              }}
+            >
+              決済を確認したら、このボタンで即コード発行 → 案内文をコピーできます。
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontWeight: "bold" }}>直近販売ログ</div>
+              <button
+                onClick={() => void copySalesReport()}
+                style={{
+                  minHeight: 34,
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  border: "none",
+                  backgroundColor: "#7c3aed",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                }}
+              >
+                レポートをコピー
+              </button>
+            </div>
+
+            {redemptionLogs.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 13 }}>
+                まだ販売ログはありません。
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 6 }}>
+                {redemptionLogs.slice(0, 8).map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      borderRadius: 10,
+                      border: "1px solid #e2e8f0",
+                      backgroundColor: "#f8fafc",
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    {item.redeemedAt
+                      ? new Date(item.redeemedAt).toLocaleString("ja-JP")
+                      : "-"}{" "}
+                    / {item.viewerName} / {item.code} / ¥
+                    {item.priceYen.toLocaleString()}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div
@@ -1397,6 +1963,20 @@ export default function HostPage() {
                       }}
                     >
                       {index + 1}：{user.name}
+                      {user.entryType === "priority" && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 11,
+                            padding: "3px 7px",
+                            borderRadius: 9999,
+                            backgroundColor: "#fef3c7",
+                            color: "#92400e",
+                          }}
+                        >
+                          PRIORITY
+                        </span>
+                      )}
                     </div>
 
                     <button

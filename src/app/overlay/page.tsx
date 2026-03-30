@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { db } from "../../lib/firebase";
+import { db, isFirebaseConfigured } from "../../lib/firebase";
 import {
   collection,
   doc,
@@ -14,6 +14,8 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  priorityScore: number;
+  entryType: "normal" | "priority";
 };
 
 type ActivePlayer = {
@@ -32,7 +34,11 @@ export default function OverlayPage() {
   );
 
   useEffect(() => {
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("priorityScore", "desc"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
@@ -44,6 +50,11 @@ export default function OverlayPage() {
             id: docItem.id,
             name: typeof raw.name === "string" ? raw.name : "",
             createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+            priorityScore:
+              typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+            entryType: (raw.entryType === "priority"
+              ? "priority"
+              : "normal") as "normal" | "priority",
           };
         });
 
@@ -117,6 +128,7 @@ export default function OverlayPage() {
     if (queue.length === 0) return "待機なし";
     return queue[0].name || "待機なし";
   }, [queue]);
+  const nextPlayerIsPriority = queue[0]?.entryType === "priority";
 
   const waitingCount = queue.length;
 
@@ -139,6 +151,25 @@ export default function OverlayPage() {
       };
     });
   }, [activePlayers, playerStatsMap]);
+
+  if (!isFirebaseConfigured) {
+    return (
+      <main
+        style={{
+          width: "100vw",
+          height: "100vh",
+          display: "grid",
+          placeItems: "center",
+          color: "#fff",
+          background: "rgba(15, 23, 42, 0.82)",
+          fontSize: 24,
+          fontWeight: 700,
+        }}
+      >
+        Firebase設定待ち
+      </main>
+    );
+  }
 
   return (
     <main
@@ -308,6 +339,22 @@ export default function OverlayPage() {
                 >
                   {nextPlayerName}
                 </div>
+                {nextPlayerIsPriority && (
+                  <div
+                    style={{
+                      display: "inline-block",
+                      marginTop: 8,
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "#92400e",
+                      background: "#fef3c7",
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                    }}
+                  >
+                    PRIORITY TICKET
+                  </div>
+                )}
               </div>
 
               <div

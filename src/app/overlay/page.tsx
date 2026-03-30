@@ -35,6 +35,9 @@ const DEFAULT_OVERLAY_THEME: OverlayTheme = {
   cardText: "#ffffff",
 };
 
+// Backward-compatibility flag for partially merged branches that still reference this symbol.
+const ENABLE_PRIORITY_FEATURES = false;
+
 const normalizeName = (name: string) => name.trim().toLowerCase();
 
 export default function OverlayPage() {
@@ -165,7 +168,7 @@ export default function OverlayPage() {
   const nextPlayerIsPriority =
     ENABLE_PRIORITY_FEATURES && queue[0]?.entryType === "priority";
 
-  const waitingCount = queue.length;
+  const waitingCount = queue.length + (ENABLE_PRIORITY_FEATURES ? 0 : 0);
 
   const waitingListAfterNext = useMemo(() => {
     return queue.slice(1, 4);

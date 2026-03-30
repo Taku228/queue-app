@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import {
@@ -71,11 +71,11 @@ const PLAN_LIMITS: Record<
   PlanType,
   { maxActivePlayers: number; label: string }
 > = {
-  free: { maxActivePlayers: 2, label: "無料版" },
-  pro: { maxActivePlayers: 4, label: "有料版 Pro" },
+  free: { maxActivePlayers: 2, label: "辟｡譁咏沿" },
+  pro: { maxActivePlayers: 4, label: "譛画侭迚・Pro" },
   business: {
     maxActivePlayers: 8,
-    label: "有料版 Business",
+    label: "譛画侭迚・Business",
   },
 };
 
@@ -177,7 +177,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host queue onSnapshot error:", error);
-        setStatusMessage("待機列の読み込みに失敗しました。", "error");
+        setStatusMessage("蠕・ｩ溷・縺ｮ隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -207,7 +207,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host activePlayers onSnapshot error:", error);
-        setStatusMessage("プレイ中情報の読み込みに失敗しました。", "error");
+        setStatusMessage("繝励Ξ繧､荳ｭ諠・ｱ縺ｮ隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -242,7 +242,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host queueSettings onSnapshot error:", error);
-        setStatusMessage("設定の読み込みに失敗しました。", "error");
+        setStatusMessage("險ｭ螳壹・隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -266,7 +266,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host playerStats onSnapshot error:", error);
-        setStatusMessage("対戦数の読み込みに失敗しました。", "error");
+        setStatusMessage("蟇ｾ謌ｦ謨ｰ縺ｮ隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -284,7 +284,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host subscription onSnapshot error:", error);
-        setStatusMessage("プラン設定の読み込みに失敗しました。", "error");
+        setStatusMessage("繝励Λ繝ｳ險ｭ螳壹・隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -318,7 +318,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host subscriptionPricing onSnapshot error:", error);
-        setStatusMessage("料金設定の読み込みに失敗しました。", "error");
+        setStatusMessage("譁咎≡險ｭ螳壹・隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -343,7 +343,7 @@ export default function HostPage() {
       },
       (error) => {
         console.error("host overlayTheme onSnapshot error:", error);
-        setStatusMessage("OBSカラー設定の読み込みに失敗しました。", "error");
+        setStatusMessage("OBS繧ｫ繝ｩ繝ｼ險ｭ螳壹・隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
       }
     );
 
@@ -402,20 +402,20 @@ export default function HostPage() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      setStatusMessage("ログインしました。", "success");
+      setStatusMessage("繝ｭ繧ｰ繧､繝ｳ縺励∪縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("Googleログインに失敗しました。", "error");
+      setStatusMessage("Google繝ｭ繧ｰ繧､繝ｳ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     }
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
-      setStatusMessage("ログアウトしました。", "info");
+      setStatusMessage("繝ｭ繧ｰ繧｢繧ｦ繝医＠縺ｾ縺励◆縲・, "info");
     } catch (error) {
       console.error(error);
-      setStatusMessage("ログアウトに失敗しました。", "error");
+      setStatusMessage("繝ｭ繧ｰ繧｢繧ｦ繝医↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     }
   };
 
@@ -429,20 +429,20 @@ export default function HostPage() {
       !Number.isInteger(parsedMaxActivePlayers) ||
       parsedMaxActivePlayers <= 0
     ) {
-      setStatusMessage("同時参加人数は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("蜷梧凾蜿ょ刈莠ｺ謨ｰ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
     if (parsedMaxActivePlayers > planLimit.maxActivePlayers) {
       setStatusMessage(
-        `${PLAN_LIMITS[subscription.plan].label} の同時参加人数上限は ${planLimit.maxActivePlayers} 人です。`,
+        `${PLAN_LIMITS[subscription.plan].label} 縺ｮ蜷梧凾蜿ょ刈莠ｺ謨ｰ荳企剞縺ｯ ${planLimit.maxActivePlayers} 莠ｺ縺ｧ縺吶Ａ,
         "error"
       );
       return;
     }
 
     if (!Number.isInteger(parsedMaxBattles) || parsedMaxBattles <= 0) {
-      setStatusMessage("最大対戦数は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("譛螟ｧ蟇ｾ謌ｦ謨ｰ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
@@ -455,10 +455,10 @@ export default function HostPage() {
         updatedAt: Date.now(),
       });
 
-      setStatusMessage("設定を保存しました。", "success");
+      setStatusMessage("險ｭ螳壹ｒ菫晏ｭ倥＠縺ｾ縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("設定の保存に失敗しました。", "error");
+      setStatusMessage("險ｭ螳壹・菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsSavingSettings(false);
     }
@@ -467,7 +467,7 @@ export default function HostPage() {
   const createPriorityCode = async () => {
     if (!isHost || isProcessing) return;
     if (!canUsePriority) {
-      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      setStatusMessage("辟｡譁咏沿縺ｧ縺ｯ蜆ｪ蜈医さ繝ｼ繝画ｩ溯・繧貞茜逕ｨ縺ｧ縺阪∪縺帙ｓ縲・, "error");
       return;
     }
 
@@ -476,17 +476,17 @@ export default function HostPage() {
     const remainingUses = Number(codeUsesInput);
 
     if (!label) {
-      setStatusMessage("チケット名を入力してください。", "error");
+      setStatusMessage("繝√こ繝・ヨ蜷阪ｒ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
     if (!Number.isInteger(priceYen) || priceYen <= 0) {
-      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("萓｡譬ｼ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
     if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
-      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("蛻ｩ逕ｨ蝗樊焚縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
@@ -496,7 +496,7 @@ export default function HostPage() {
     try {
       const existing = await getDoc(doc(db, "priorityCodes", code));
       if (existing.exists()) {
-        setStatusMessage("コード生成に失敗しました。再試行してください。", "error");
+        setStatusMessage("繧ｳ繝ｼ繝臥函謌舌↓螟ｱ謨励＠縺ｾ縺励◆縲ょ・隧ｦ陦後＠縺ｦ縺上□縺輔＞縲・, "error");
         return;
       }
 
@@ -510,10 +510,10 @@ export default function HostPage() {
         createdBy: user?.uid ?? "",
       });
 
-      setStatusMessage(`優先コード ${code} を発行しました。`, "success");
+      setStatusMessage(`蜆ｪ蜈医さ繝ｼ繝・${code} 繧堤匱陦後＠縺ｾ縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("優先コードの発行に失敗しました。", "error");
+      setStatusMessage("蜆ｪ蜈医さ繝ｼ繝峨・逋ｺ陦後↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -522,13 +522,13 @@ export default function HostPage() {
   const issuePriorityTicketForBuyer = async () => {
     if (!isHost || isProcessing) return;
     if (!canUsePriority) {
-      setStatusMessage("無料版では購入者向けコード発行は利用できません。", "error");
+      setStatusMessage("辟｡譁咏沿縺ｧ縺ｯ雉ｼ蜈･閠・髄縺代さ繝ｼ繝臥匱陦後・蛻ｩ逕ｨ縺ｧ縺阪∪縺帙ｓ縲・, "error");
       return;
     }
 
     const buyerName = buyerNameInput.trim();
     if (!buyerName) {
-      setStatusMessage("購入者名を入力してください。", "error");
+      setStatusMessage("雉ｼ蜈･閠・錐繧貞・蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
@@ -536,12 +536,12 @@ export default function HostPage() {
     const remainingUses = Number(codeUsesInput);
 
     if (!Number.isInteger(priceYen) || priceYen <= 0) {
-      setStatusMessage("価格は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("萓｡譬ｼ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
     if (!Number.isInteger(remainingUses) || remainingUses <= 0) {
-      setStatusMessage("利用回数は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("蛻ｩ逕ｨ蝗樊焚縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
@@ -550,7 +550,7 @@ export default function HostPage() {
     setIsProcessing(true);
     try {
       await setDoc(doc(db, "priorityCodes", code), {
-        label: `${buyerName}さん専用`,
+        label: `${buyerName}縺輔ｓ蟆ら畑`,
         priceYen,
         remainingUses,
         redeemedCount: 0,
@@ -561,21 +561,21 @@ export default function HostPage() {
       });
 
       const message = [
-        `${buyerName}さん、購入ありがとうございます！`,
-        `優先参加コード: ${code}`,
-        `利用可能回数: ${remainingUses} 回`,
-        "viewerページでコード入力して参加してください。",
+        `${buyerName}縺輔ｓ縲∬ｳｼ蜈･縺ゅｊ縺後→縺・＃縺悶＞縺ｾ縺呻ｼ～,
+        `蜆ｪ蜈亥盾蜉繧ｳ繝ｼ繝・ ${code}`,
+        `蛻ｩ逕ｨ蜿ｯ閭ｽ蝗樊焚: ${remainingUses} 蝗杼,
+        "viewer繝壹・繧ｸ縺ｧ繧ｳ繝ｼ繝牙・蜉帙＠縺ｦ蜿ょ刈縺励※縺上□縺輔＞縲・,
       ].join("\n");
 
       await navigator.clipboard.writeText(message);
       setBuyerNameInput("");
       setStatusMessage(
-        `購入者向けコード ${code} を発行し、案内文をコピーしました。`,
+        `雉ｼ蜈･閠・髄縺代さ繝ｼ繝・${code} 繧堤匱陦後＠縲∵｡亥・譁・ｒ繧ｳ繝斐・縺励∪縺励◆縲Ａ,
         "success"
       );
     } catch (error) {
       console.error(error);
-      setStatusMessage("購入者向けコードの発行に失敗しました。", "error");
+      setStatusMessage("雉ｼ蜈･閠・髄縺代さ繝ｼ繝峨・逋ｺ陦後↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -584,7 +584,7 @@ export default function HostPage() {
   const togglePriorityCode = async (code: string, nextActive: boolean) => {
     if (!isHost || isProcessing) return;
     if (!canUsePriority) {
-      setStatusMessage("無料版では優先コード機能を利用できません。", "error");
+      setStatusMessage("辟｡譁咏沿縺ｧ縺ｯ蜆ｪ蜈医さ繝ｼ繝画ｩ溯・繧貞茜逕ｨ縺ｧ縺阪∪縺帙ｓ縲・, "error");
       return;
     }
 
@@ -597,13 +597,13 @@ export default function HostPage() {
       );
       setStatusMessage(
         nextActive
-          ? `${code} を有効化しました。`
-          : `${code} を停止しました。`,
+          ? `${code} 繧呈怏蜉ｹ蛹悶＠縺ｾ縺励◆縲Ａ
+          : `${code} 繧貞●豁｢縺励∪縺励◆縲Ａ,
         "success"
       );
     } catch (error) {
       console.error(error);
-      setStatusMessage("コード状態の更新に失敗しました。", "error");
+      setStatusMessage("繧ｳ繝ｼ繝臥憾諷九・譖ｴ譁ｰ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -620,13 +620,13 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (queue.length === 0) {
-      setStatusMessage("待機列が空です。", "error");
+      setStatusMessage("蠕・ｩ溷・縺檎ｩｺ縺ｧ縺吶・, "error");
       return;
     }
 
     if (activePlayers.length >= settings.maxActivePlayers) {
       setStatusMessage(
-        `同時参加人数の上限 ${settings.maxActivePlayers} 人に達しています。`,
+        `蜷梧凾蜿ょ刈莠ｺ謨ｰ縺ｮ荳企剞 ${settings.maxActivePlayers} 莠ｺ縺ｫ驕斐＠縺ｦ縺・∪縺吶Ａ,
         "error"
       );
       return;
@@ -640,7 +640,7 @@ export default function HostPage() {
     );
 
     if (alreadyActive) {
-      setStatusMessage("その名前はすでにプレイ中です。", "error");
+      setStatusMessage("縺昴・蜷榊燕縺ｯ縺吶〒縺ｫ繝励Ξ繧､荳ｭ縺ｧ縺吶・, "error");
       return;
     }
 
@@ -664,10 +664,10 @@ export default function HostPage() {
       });
 
       await batch.commit();
-      setStatusMessage(`${nextUser.name} をプレイ中に追加しました。`, "success");
+      setStatusMessage(`${nextUser.name} 繧偵・繝ｬ繧､荳ｭ縺ｫ霑ｽ蜉縺励∪縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("プレイ中への追加に失敗しました。", "error");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｸ縺ｮ霑ｽ蜉縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -677,7 +677,7 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (activePlayers.length === 0) {
-      setStatusMessage("プレイ中の参加者がいません。", "error");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ蜿ょ刈閠・′縺・∪縺帙ｓ縲・, "error");
       return;
     }
 
@@ -715,7 +715,7 @@ export default function HostPage() {
 
         await batch.commit();
         setStatusMessage(
-          "試合終了を反映しました。待機がいないためプレイ中はそのままです。",
+          "隧ｦ蜷育ｵゆｺ・ｒ蜿肴丐縺励∪縺励◆縲ょｾ・ｩ溘′縺・↑縺・◆繧√・繝ｬ繧､荳ｭ縺ｯ縺昴・縺ｾ縺ｾ縺ｧ縺吶・,
           "success"
         );
         return;
@@ -754,18 +754,18 @@ export default function HostPage() {
 
       if (removableCount > 0) {
         setStatusMessage(
-          `試合終了を反映しました。${removableCount} 人を入れ替えました。`,
+          `隧ｦ蜷育ｵゆｺ・ｒ蜿肴丐縺励∪縺励◆縲・{removableCount} 莠ｺ繧貞・繧梧崛縺医∪縺励◆縲Ａ,
           "success"
         );
       } else {
         setStatusMessage(
-          "試合終了を反映しました。上限到達者はいませんでした。",
+          "隧ｦ蜷育ｵゆｺ・ｒ蜿肴丐縺励∪縺励◆縲ゆｸ企剞蛻ｰ驕碑・・縺・∪縺帙ｓ縺ｧ縺励◆縲・,
           "success"
         );
       }
     } catch (error) {
       console.error(error);
-      setStatusMessage("試合終了処理に失敗しました。", "error");
+      setStatusMessage("隧ｦ蜷育ｵゆｺ・・逅・↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -781,10 +781,10 @@ export default function HostPage() {
         (player) => player.name !== playerName
       );
       await syncActivePlayers(nextPlayers);
-      setStatusMessage(`${playerName} をプレイ中から外しました。`, "success");
+      setStatusMessage(`${playerName} 繧偵・繝ｬ繧､荳ｭ縺九ｉ螟悶＠縺ｾ縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("プレイ中からの削除に失敗しました。", "error");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺九ｉ縺ｮ蜑企勁縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -814,10 +814,10 @@ export default function HostPage() {
       });
 
       await batch.commit();
-      setStatusMessage(`${playerName} を待機列の最後尾に戻しました。`, "success");
+      setStatusMessage(`${playerName} 繧貞ｾ・ｩ溷・縺ｮ譛蠕悟ｰｾ縺ｫ謌ｻ縺励∪縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("最後尾へ戻す処理に失敗しました。", "error");
+      setStatusMessage("譛蠕悟ｰｾ縺ｸ謌ｻ縺吝・逅・↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -843,12 +843,12 @@ export default function HostPage() {
       );
 
       setStatusMessage(
-        `${playerName} の配信通算を ${currentBattles + 1} 戦に更新しました。`,
+        `${playerName} 縺ｮ驟堺ｿ｡騾夂ｮ励ｒ ${currentBattles + 1} 謌ｦ縺ｫ譖ｴ譁ｰ縺励∪縺励◆縲Ａ,
         "success"
       );
     } catch (error) {
       console.error(error);
-      setStatusMessage("対戦数の更新に失敗しました。", "error");
+      setStatusMessage("蟇ｾ謌ｦ謨ｰ縺ｮ譖ｴ譁ｰ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -858,7 +858,7 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (activePlayers.length === 0) {
-      setStatusMessage("プレイ中の参加者がいません。", "error");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ蜿ょ刈閠・′縺・∪縺帙ｓ縲・, "error");
       return;
     }
 
@@ -883,10 +883,10 @@ export default function HostPage() {
       }
 
       await batch.commit();
-      setStatusMessage("プレイ中の全員を +1戦 しました。", "success");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ蜈ｨ蜩｡繧・+1謌ｦ 縺励∪縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("全員の対戦数更新に失敗しました。", "error");
+      setStatusMessage("蜈ｨ蜩｡縺ｮ蟇ｾ謌ｦ謨ｰ譖ｴ譁ｰ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -899,10 +899,10 @@ export default function HostPage() {
 
     try {
       await deleteDoc(doc(db, "queue", queueId));
-      setStatusMessage(`${queueName} を待機列から削除しました。`, "success");
+      setStatusMessage(`${queueName} 繧貞ｾ・ｩ溷・縺九ｉ蜑企勁縺励∪縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("待機列からの削除に失敗しました。", "error");
+      setStatusMessage("蠕・ｩ溷・縺九ｉ縺ｮ蜑企勁縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -912,7 +912,7 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (queue.length === 0) {
-      setStatusMessage("待機列は空です。", "info");
+      setStatusMessage("蠕・ｩ溷・縺ｯ遨ｺ縺ｧ縺吶・, "info");
       return;
     }
 
@@ -926,10 +926,10 @@ export default function HostPage() {
       });
 
       await batch.commit();
-      setStatusMessage("待機列を全削除しました。", "success");
+      setStatusMessage("蠕・ｩ溷・繧貞・蜑企勁縺励∪縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("待機列のリセットに失敗しました。", "error");
+      setStatusMessage("蠕・ｩ溷・縺ｮ繝ｪ繧ｻ繝・ヨ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -939,7 +939,7 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (activePlayers.length === 0) {
-      setStatusMessage("プレイ中の参加者はいません。", "info");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ蜿ょ刈閠・・縺・∪縺帙ｓ縲・, "info");
       return;
     }
 
@@ -947,10 +947,10 @@ export default function HostPage() {
 
     try {
       await syncActivePlayers([]);
-      setStatusMessage("プレイ中の参加者を全クリアしました。", "success");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ蜿ょ刈閠・ｒ蜈ｨ繧ｯ繝ｪ繧｢縺励∪縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("プレイ中のクリアに失敗しました。", "error");
+      setStatusMessage("繝励Ξ繧､荳ｭ縺ｮ繧ｯ繝ｪ繧｢縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -960,7 +960,7 @@ export default function HostPage() {
     if (!isHost || isProcessing) return;
 
     if (queue.length === 0 && activePlayers.length === 0) {
-      setStatusMessage("すでに空の状態です。", "info");
+      setStatusMessage("縺吶〒縺ｫ遨ｺ縺ｮ迥ｶ諷九〒縺吶・, "info");
       return;
     }
 
@@ -979,19 +979,20 @@ export default function HostPage() {
       });
 
       await batch.commit();
-      setStatusMessage("全リセットしました。", "success");
+      setStatusMessage("蜈ｨ繝ｪ繧ｻ繝・ヨ縺励∪縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("全リセットに失敗しました。", "error");
+      setStatusMessage("蜈ｨ繝ｪ繧ｻ繝・ヨ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const activeStatusText = useMemo(() => {
-    return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
+    return `${activePlayers.length} / ${settings.maxActivePlayers} 莠ｺ`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
+  const canUsePriority = subscription.plan !== "free";
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;
@@ -1013,10 +1014,10 @@ export default function HostPage() {
         );
       }
 
-      setStatusMessage(`プランを ${PLAN_LIMITS[plan].label} に変更しました。`, "success");
+      setStatusMessage(`繝励Λ繝ｳ繧・${PLAN_LIMITS[plan].label} 縺ｫ螟画峩縺励∪縺励◆縲Ａ, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("プラン変更に失敗しました。", "error");
+      setStatusMessage("繝励Λ繝ｳ螟画峩縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsSavingPlan(false);
     }
@@ -1029,11 +1030,11 @@ export default function HostPage() {
     const businessMonthlyYen = Number(pricingInput.businessMonthlyYen);
 
     if (!Number.isInteger(proMonthlyYen) || proMonthlyYen <= 0) {
-      setStatusMessage("Pro価格は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("Pro萓｡譬ｼ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
     if (!Number.isInteger(businessMonthlyYen) || businessMonthlyYen <= 0) {
-      setStatusMessage("Business価格は 1 以上の整数で入力してください。", "error");
+      setStatusMessage("Business萓｡譬ｼ縺ｯ 1 莉･荳翫・謨ｴ謨ｰ縺ｧ蜈･蜉帙＠縺ｦ縺上□縺輔＞縲・, "error");
       return;
     }
 
@@ -1044,10 +1045,10 @@ export default function HostPage() {
         { proMonthlyYen, businessMonthlyYen, updatedAt: Date.now() },
         { merge: true }
       );
-      setStatusMessage("料金設定を保存しました。", "success");
+      setStatusMessage("譁咎≡險ｭ螳壹ｒ菫晏ｭ倥＠縺ｾ縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("料金設定の保存に失敗しました。", "error");
+      setStatusMessage("譁咎≡險ｭ螳壹・菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsSavingPricing(false);
     }
@@ -1056,12 +1057,12 @@ export default function HostPage() {
   const saveOverlayTheme = async () => {
     if (!isHost || isSavingOverlayTheme) return;
     if (subscription.plan === "free") {
-      setStatusMessage("OBSカード色変更は有料プラン（Pro以上）で利用できます。", "error");
+      setStatusMessage("OBS繧ｫ繝ｼ繝芽牡螟画峩縺ｯ譛画侭繝励Λ繝ｳ・・ro莉･荳奇ｼ峨〒蛻ｩ逕ｨ縺ｧ縺阪∪縺吶・, "error");
       return;
     }
 
     if (!overlayTheme.cardBackground.trim() || !overlayTheme.cardText.trim()) {
-      setStatusMessage("OBSカラーは未入力にできません。", "error");
+      setStatusMessage("OBS繧ｫ繝ｩ繝ｼ縺ｯ譛ｪ蜈･蜉帙↓縺ｧ縺阪∪縺帙ｓ縲・, "error");
       return;
     }
 
@@ -1072,10 +1073,10 @@ export default function HostPage() {
         { ...overlayTheme, updatedAt: Date.now() },
         { merge: true }
       );
-      setStatusMessage("OBSカード色を保存しました。", "success");
+      setStatusMessage("OBS繧ｫ繝ｼ繝芽牡繧剃ｿ晏ｭ倥＠縺ｾ縺励◆縲・, "success");
     } catch (error) {
       console.error(error);
-      setStatusMessage("OBSカード色の保存に失敗しました。", "error");
+      setStatusMessage("OBS繧ｫ繝ｼ繝芽牡縺ｮ菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
     } finally {
       setIsSavingOverlayTheme(false);
     }
@@ -1101,12 +1102,12 @@ export default function HostPage() {
             { merge: true }
           );
           setStatusMessage(
-            `購入プラン(${PLAN_LIMITS[purchasedPlan].label})を自動反映しました。`,
+            `雉ｼ蜈･繝励Λ繝ｳ(${PLAN_LIMITS[purchasedPlan].label})繧定・蜍募渚譏縺励∪縺励◆縲Ａ,
             "success"
           );
         } catch (error) {
           console.error(error);
-          setStatusMessage("購入プランの自動反映に失敗しました。", "error");
+          setStatusMessage("雉ｼ蜈･繝励Λ繝ｳ縺ｮ閾ｪ蜍募渚譏縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・, "error");
         }
       },
       (error) => {
@@ -1140,15 +1141,15 @@ export default function HostPage() {
           }}
         >
           <h1 style={{ fontSize: 26, margin: "0 0 8px 0" }}>
-            Firebase設定が未完了です
+            Firebase險ｭ螳壹′譛ｪ螳御ｺ・〒縺・
           </h1>
           <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
-            `.env.local` に Firebase の公開キーを設定すると host 画面が使えるようになります。
-            README の「初回セットアップ」を上から順に進めてください。
+            `.env.local` 縺ｫ Firebase 縺ｮ蜈ｬ髢九く繝ｼ繧定ｨｭ螳壹☆繧九→ host 逕ｻ髱｢縺御ｽｿ縺医ｋ繧医≧縺ｫ縺ｪ繧翫∪縺吶・
+            README 縺ｮ縲悟・蝗槭そ繝・ヨ繧｢繝・・縲阪ｒ荳翫°繧蛾・↓騾ｲ繧√※縺上□縺輔＞縲・
             {firebaseClientInitError ? (
               <>
                 <br />
-                初期化エラー: {firebaseClientInitError}
+                蛻晄悄蛹悶お繝ｩ繝ｼ: {firebaseClientInitError}
               </>
             ) : null}
           </p>
@@ -1198,7 +1199,7 @@ export default function HostPage() {
               marginBottom: 16,
             }}
           >
-            配信者用画面です。Googleログインしてください。
+            驟堺ｿ｡閠・畑逕ｻ髱｢縺ｧ縺吶・oogle繝ｭ繧ｰ繧､繝ｳ縺励※縺上□縺輔＞縲・
           </p>
 
           <button
@@ -1215,7 +1216,7 @@ export default function HostPage() {
               cursor: "pointer",
             }}
           >
-            Googleでログイン
+            Google縺ｧ繝ｭ繧ｰ繧､繝ｳ
           </button>
         </div>
       </main>
@@ -1252,7 +1253,7 @@ export default function HostPage() {
               marginBottom: 8,
             }}
           >
-            権限がありません
+            讓ｩ髯舌′縺ゅｊ縺ｾ縺帙ｓ
           </h1>
 
           <p
@@ -1263,7 +1264,7 @@ export default function HostPage() {
               marginBottom: 16,
             }}
           >
-            このアカウントでは host 画面を利用できません。
+            縺薙・繧｢繧ｫ繧ｦ繝ｳ繝医〒縺ｯ host 逕ｻ髱｢繧貞茜逕ｨ縺ｧ縺阪∪縺帙ｓ縲・
           </p>
 
           <button
@@ -1279,7 +1280,7 @@ export default function HostPage() {
               cursor: "pointer",
             }}
           >
-            ログアウト
+            繝ｭ繧ｰ繧｢繧ｦ繝・
           </button>
 
           <button
@@ -1296,7 +1297,7 @@ export default function HostPage() {
               cursor: "pointer",
             }}
           >
-            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
+            {isSettingsOpen ? "險ｭ螳壹ｒ髢峨§繧・ : "險ｭ螳壹ｒ髢九￥"}
           </button>
         </div>
       </main>
@@ -1351,7 +1352,7 @@ export default function HostPage() {
                 fontSize: 14,
               }}
             >
-              ログイン中: {user.email ?? user.uid}
+              繝ｭ繧ｰ繧､繝ｳ荳ｭ: {user.email ?? user.uid}
             </p>
           </div>
 
@@ -1368,7 +1369,7 @@ export default function HostPage() {
               cursor: "pointer",
             }}
           >
-            ログアウト
+            繝ｭ繧ｰ繧｢繧ｦ繝・
           </button>
         </div>
 
@@ -1400,7 +1401,7 @@ export default function HostPage() {
           }}
         >
           <div style={{ fontSize: 13, color: "#334155" }}>
-            設定画面を開いてプラン・料金を変更できます
+            險ｭ螳夂判髱｢繧帝幕縺・※繝励Λ繝ｳ繝ｻ譁咎≡繧貞､画峩縺ｧ縺阪∪縺・
           </div>
           <button
             onClick={() => setIsSettingsOpen((prev) => !prev)}
@@ -1417,7 +1418,7 @@ export default function HostPage() {
               flexShrink: 0,
             }}
           >
-            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
+            {isSettingsOpen ? "險ｭ螳壹ｒ髢峨§繧・ : "險ｭ螳壹ｒ髢九￥"}
           </button>
         </div>
 
@@ -1456,7 +1457,7 @@ export default function HostPage() {
               WAITING
             </div>
             <div style={{ fontSize: 30, fontWeight: "bold" }}>
-              {queue.length}人
+              {queue.length}莠ｺ
             </div>
           </div>
 
@@ -1472,9 +1473,9 @@ export default function HostPage() {
               SETTINGS
             </div>
             <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
-              同時参加人数: {settings.maxActivePlayers}人
+              蜷梧凾蜿ょ刈莠ｺ謨ｰ: {settings.maxActivePlayers}莠ｺ
               <br />
-              最大対戦数: {settings.maxBattlesPerPlayer}戦
+              譛螟ｧ蟇ｾ謌ｦ謨ｰ: {settings.maxBattlesPerPlayer}謌ｦ
             </div>
           </div>
 
@@ -1497,7 +1498,7 @@ export default function HostPage() {
               marginBottom: 14,
             }}
           >
-            設定変更
+            險ｭ螳壼､画峩
           </div>
 
           <div
@@ -1509,7 +1510,7 @@ export default function HostPage() {
               backgroundColor: "#f8fafc",
             }}
           >
-            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン</div>
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>繝励Λ繝ｳ</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {(Object.keys(PLAN_LIMITS) as PlanType[]).map((plan) => (
                 <button
@@ -1535,8 +1536,8 @@ export default function HostPage() {
               ))}
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
-              {planLimit.maxActivePlayers} 人
+              迴ｾ蝨ｨ繝励Λ繝ｳ: {PLAN_LIMITS[subscription.plan].label} / 蜷梧凾蜿ょ刈荳企剞:{" "}
+              {planLimit.maxActivePlayers} 莠ｺ
             </div>
           </div>
 
@@ -1549,7 +1550,7 @@ export default function HostPage() {
               backgroundColor: "#f8fafc",
             }}
           >
-            <div style={{ fontWeight: "bold", marginBottom: 8 }}>プラン料金</div>
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>繝励Λ繝ｳ譁咎≡</div>
             <div
               style={{
                 display: "grid",
@@ -1566,7 +1567,7 @@ export default function HostPage() {
                   }))
                 }
                 inputMode="numeric"
-                placeholder="Pro 月額(円)"
+                placeholder="Pro 譛磯｡・蜀・"
                 style={inputStyle}
               />
               <input
@@ -1578,12 +1579,12 @@ export default function HostPage() {
                   }))
                 }
                 inputMode="numeric"
-                placeholder="Business 月額(円)"
+                placeholder="Business 譛磯｡・蜀・"
                 style={inputStyle}
               />
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              現在値: Pro ¥{pricing.proMonthlyYen.toLocaleString()} / Business ¥
+              迴ｾ蝨ｨ蛟､: Pro ﾂ･{pricing.proMonthlyYen.toLocaleString()} / Business ﾂ･
               {pricing.businessMonthlyYen.toLocaleString()}
             </div>
             <button
@@ -1602,7 +1603,7 @@ export default function HostPage() {
                 cursor: isSavingPricing ? "default" : "pointer",
               }}
             >
-              {isSavingPricing ? "保存中..." : "料金を保存"}
+              {isSavingPricing ? "菫晏ｭ倅ｸｭ..." : "譁咎≡繧剃ｿ晏ｭ・}
             </button>
           </div>
 
@@ -1616,7 +1617,7 @@ export default function HostPage() {
             }}
           >
             <div style={{ fontWeight: "bold", marginBottom: 8 }}>
-              OBSカード色（Pro / Business）
+              OBS繧ｫ繝ｼ繝芽牡・・ro / Business・・
             </div>
             <div
               style={{
@@ -1633,7 +1634,7 @@ export default function HostPage() {
                     cardBackground: e.target.value,
                   }))
                 }
-                placeholder="カード背景色 (例: rgba(30,41,59,0.62))"
+                placeholder="繧ｫ繝ｼ繝芽レ譎ｯ濶ｲ (萓・ rgba(30,41,59,0.62))"
                 style={inputStyle}
                 disabled={subscription.plan === "free"}
               />
@@ -1645,13 +1646,13 @@ export default function HostPage() {
                     cardText: e.target.value,
                   }))
                 }
-                placeholder="カード文字色 (例: #ffffff)"
+                placeholder="繧ｫ繝ｼ繝画枚蟄苓牡 (萓・ #ffffff)"
                 style={inputStyle}
                 disabled={subscription.plan === "free"}
               />
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              Freeプランでは編集不可です。現在値: 背景 {overlayTheme.cardBackground} / 文字{" "}
+              Free繝励Λ繝ｳ縺ｧ縺ｯ邱ｨ髮・ｸ榊庄縺ｧ縺吶ら樟蝨ｨ蛟､: 閭梧勹 {overlayTheme.cardBackground} / 譁・ｭ養" "}
               {overlayTheme.cardText}
             </div>
             <button
@@ -1676,7 +1677,7 @@ export default function HostPage() {
                     : "pointer",
               }}
             >
-              {isSavingOverlayTheme ? "保存中..." : "OBSカラーを保存"}
+              {isSavingOverlayTheme ? "菫晏ｭ倅ｸｭ..." : "OBS繧ｫ繝ｩ繝ｼ繧剃ｿ晏ｭ・}
             </button>
           </div>
 
@@ -1696,7 +1697,7 @@ export default function HostPage() {
                   marginBottom: 6,
                 }}
               >
-                同時参加人数
+                蜷梧凾蜿ょ刈莠ｺ謨ｰ
               </div>
               <input
                 value={maxActivePlayersInput}
@@ -1721,7 +1722,7 @@ export default function HostPage() {
                   marginBottom: 6,
                 }}
               >
-                1人あたり最大対戦数
+                1莠ｺ縺ゅ◆繧頑怙螟ｧ蟇ｾ謌ｦ謨ｰ
               </div>
               <input
                 value={maxBattlesInput}
@@ -1754,7 +1755,7 @@ export default function HostPage() {
               cursor: isSavingSettings ? "default" : "pointer",
             }}
           >
-            {isSavingSettings ? "保存中..." : "設定を保存"}
+            {isSavingSettings ? "菫晏ｭ倅ｸｭ..." : "險ｭ螳壹ｒ菫晏ｭ・}
           </button>
           </div>
         )}
@@ -1790,7 +1791,7 @@ export default function HostPage() {
                   fontWeight: "bold",
                 }}
               >
-                プレイ中
+                繝励Ξ繧､荳ｭ
               </div>
 
               <div
@@ -1821,7 +1822,7 @@ export default function HostPage() {
                         : "pointer",
                   }}
                 >
-                  次の人を追加
+                  谺｡縺ｮ莠ｺ繧定ｿｽ蜉
                 </button>
 
                 <button
@@ -1845,7 +1846,7 @@ export default function HostPage() {
                         : "pointer",
                   }}
                 >
-                  試合終了
+                  隧ｦ蜷育ｵゆｺ・
                 </button>
               </div>
             </div>
@@ -1857,7 +1858,7 @@ export default function HostPage() {
                   color: "#64748b",
                 }}
               >
-                現在プレイ中の参加者はいません。
+                迴ｾ蝨ｨ繝励Ξ繧､荳ｭ縺ｮ蜿ょ刈閠・・縺・∪縺帙ｓ縲・
               </p>
             ) : (
               <div
@@ -1901,9 +1902,9 @@ export default function HostPage() {
                           marginBottom: 10,
                         }}
                       >
-                        今回 {currentSessionBattles}戦 / 配信通算 {totalBattles}戦
+                        莉雁屓 {currentSessionBattles}謌ｦ / 驟堺ｿ｡騾夂ｮ・{totalBattles}謌ｦ
                         <br />
-                        次は {nextSessionBattle}戦目 (合計 {nextTotalBattle}戦目)
+                        谺｡縺ｯ {nextSessionBattle}謌ｦ逶ｮ (蜷郁ｨ・{nextTotalBattle}謌ｦ逶ｮ)
                       </div>
 
                       <div
@@ -1928,7 +1929,7 @@ export default function HostPage() {
                             cursor: isProcessing ? "default" : "pointer",
                           }}
                         >
-                          +1戦
+                          +1謌ｦ
                         </button>
 
                         <button
@@ -1946,7 +1947,7 @@ export default function HostPage() {
                             cursor: isProcessing ? "default" : "pointer",
                           }}
                         >
-                          最後尾へ戻す
+                          譛蠕悟ｰｾ縺ｸ謌ｻ縺・
                         </button>
 
                         <button
@@ -1964,7 +1965,7 @@ export default function HostPage() {
                             cursor: isProcessing ? "default" : "pointer",
                           }}
                         >
-                          クリア
+                          繧ｯ繝ｪ繧｢
                         </button>
                       </div>
                     </div>
@@ -1985,13 +1986,13 @@ export default function HostPage() {
                 padding: "10px 12px",
               }}
             >
-              試合終了ボタン:
+              隧ｦ蜷育ｵゆｺ・・繧ｿ繝ｳ:
               <br />
-              ・プレイ中全員を +1戦
+              繝ｻ繝励Ξ繧､荳ｭ蜈ｨ蜩｡繧・+1謌ｦ
               <br />
-              ・待機がいる場合のみ、上限到達者を自動で入れ替え
+              繝ｻ蠕・ｩ溘′縺・ｋ蝣ｴ蜷医・縺ｿ縲∽ｸ企剞蛻ｰ驕碑・ｒ閾ｪ蜍輔〒蜈･繧梧崛縺・
               <br />
-              ・同時に上限到達したときは、先に参加した人から優先的に交代
+              繝ｻ蜷梧凾縺ｫ荳企剞蛻ｰ驕斐＠縺溘→縺阪・縲∝・縺ｫ蜿ょ刈縺励◆莠ｺ縺九ｉ蜆ｪ蜈育噪縺ｫ莠､莉｣
             </div>
 
             <div
@@ -2023,7 +2024,7 @@ export default function HostPage() {
                       : "pointer",
                 }}
               >
-                プレイ中全員を+1戦
+                繝励Ξ繧､荳ｭ蜈ｨ蜩｡繧・1謌ｦ
               </button>
 
               <button
@@ -2047,7 +2048,7 @@ export default function HostPage() {
                       : "pointer",
                 }}
               >
-                プレイ中を全クリア
+                繝励Ξ繧､荳ｭ繧貞・繧ｯ繝ｪ繧｢
               </button>
             </div>
           </div>
@@ -2067,7 +2068,7 @@ export default function HostPage() {
                 marginBottom: 12,
               }}
             >
-              待機リスト
+              蠕・ｩ溘Μ繧ｹ繝・
             </div>
 
             {queue.length === 0 ? (
@@ -2077,7 +2078,7 @@ export default function HostPage() {
                   color: "#64748b",
                 }}
               >
-                待機中の参加者はいません。
+                蠕・ｩ滉ｸｭ縺ｮ蜿ょ刈閠・・縺・∪縺帙ｓ縲・
               </p>
             ) : (
               <div
@@ -2107,7 +2108,7 @@ export default function HostPage() {
                         color: "#0f172a",
                       }}
                     >
-                      {index + 1}：{user.name}
+                      {index + 1}・嘴user.name}
                       {user.entryType === "priority" && (
                         <span
                           style={{
@@ -2140,7 +2141,7 @@ export default function HostPage() {
                         flexShrink: 0,
                       }}
                     >
-                      削除
+                      蜑企勁
                     </button>
                   </div>
                 ))}
@@ -2172,7 +2173,7 @@ export default function HostPage() {
                     isProcessing || queue.length === 0 ? "default" : "pointer",
                 }}
               >
-                待機列を全削除
+                蠕・ｩ溷・繧貞・蜑企勁
               </button>
 
               <button
@@ -2198,7 +2199,7 @@ export default function HostPage() {
                       : "pointer",
                 }}
               >
-                全リセット
+                蜈ｨ繝ｪ繧ｻ繝・ヨ
               </button>
             </div>
           </div>
@@ -2207,3 +2208,4 @@ export default function HostPage() {
     </main>
   );
 }
+

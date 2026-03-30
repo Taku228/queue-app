@@ -148,6 +148,7 @@ export default function HostPage() {
     businessMonthlyYen: String(DEFAULT_PRICING.businessMonthlyYen),
   });
   const [isSavingPricing, setIsSavingPricing] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
@@ -1138,6 +1139,42 @@ export default function HostPage() {
     }
   };
 
+  useEffect(() => {
+    if (!user || !isHost) return;
+
+    const unsubscribeLicense = onSnapshot(
+      doc(db, "licenses", user.uid),
+      async (snapshot) => {
+        if (!snapshot.exists()) return;
+        const raw = snapshot.data();
+        const purchasedPlan: PlanType =
+          raw.plan === "pro" || raw.plan === "business" ? raw.plan : "free";
+
+        if (purchasedPlan === subscription.plan) return;
+
+        try {
+          await setDoc(
+            doc(db, "config", "subscription"),
+            { plan: purchasedPlan, updatedAt: Date.now(), source: "license" },
+            { merge: true }
+          );
+          setStatusMessage(
+            `購入プラン(${PLAN_LIMITS[purchasedPlan].label})を自動反映しました。`,
+            "success"
+          );
+        } catch (error) {
+          console.error(error);
+          setStatusMessage("購入プランの自動反映に失敗しました。", "error");
+        }
+      },
+      (error) => {
+        console.error("host license onSnapshot error:", error);
+      }
+    );
+
+    return () => unsubscribeLicense();
+  }, [user, isHost, subscription.plan]);
+
   if (!isFirebaseConfigured || !!firebaseClientInitError) {
     return (
       <main
@@ -1301,6 +1338,23 @@ export default function HostPage() {
             }}
           >
             ログアウト
+          </button>
+
+          <button
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            style={{
+              minHeight: 44,
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "none",
+              backgroundColor: "#0f766e",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
           </button>
         </div>
       </main>
@@ -1469,14 +1523,15 @@ export default function HostPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: 20,
-            padding: 18,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-          }}
-        >
+        {isSettingsOpen && (
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 20,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            }}
+          >
           <div
             style={{
               fontSize: 18,
@@ -1670,7 +1725,271 @@ export default function HostPage() {
           >
             {isSavingSettings ? "保存中..." : "設定を保存"}
           </button>
-        </div>
+          </div>
+        )}
+
+        {isSettingsOpen && (
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 20,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            }}
+          >
+          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
+            収益化: 優先参加チケット
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <input
+              value={codeLabelInput}
+              onChange={(e) => setCodeLabelInput(e.target.value)}
+              placeholder="チケット名"
+              style={inputStyle}
+            />
+            <input
+              value={codePriceInput}
+              onChange={(e) => setCodePriceInput(e.target.value)}
+              inputMode="numeric"
+              placeholder="価格(円)"
+              style={inputStyle}
+            />
+            <input
+              value={codeUsesInput}
+              onChange={(e) => setCodeUsesInput(e.target.value)}
+              inputMode="numeric"
+              placeholder="利用可能回数"
+              style={inputStyle}
+            />
+          </div>
+
+          <button
+            onClick={() => void createPriorityCode()}
+            disabled={isProcessing || !canUsePriority}
+            style={{
+              minHeight: 42,
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor:
+                isProcessing || !canUsePriority ? "#93c5fd" : "#2563eb",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: isProcessing || !canUsePriority ? "default" : "pointer",
+            }}
+          >
+            優先コードを発行
+          </button>
+
+          {!canUsePriority && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              無料版では優先コード機能は利用できません。Pro以上で解放されます。
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            {[300, 500, 1000, 3000].map((price) => (
+              <button
+                key={price}
+                onClick={() => setCodePriceInput(String(price))}
+                style={{
+                  minHeight: 32,
+                  padding: "6px 10px",
+                  borderRadius: 9999,
+                  border: "1px solid #cbd5e1",
+                  backgroundColor: "#fff",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                ¥{price}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+            {priorityCodes.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 14 }}>
+                まだ優先コードはありません。
+              </div>
+            ) : (
+              priorityCodes.map((item) => (
+                <div
+                  key={item.code}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: 12,
+                    backgroundColor: "#f8fafc",
+                  }}
+                >
+                  <div style={{ fontWeight: "bold", marginBottom: 4 }}>
+                    {item.code} / {item.label}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7 }}>
+                    価格: ¥{item.priceYen.toLocaleString()} / 残り利用回数:{" "}
+                    {item.remainingUses} / 使用回数: {item.redeemedCount}
+                  </div>
+                  <button
+                    onClick={() => void togglePriorityCode(item.code, !item.isActive)}
+                    disabled={isProcessing || !canUsePriority}
+                    style={{
+                      marginTop: 8,
+                      minHeight: 34,
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: "none",
+                      backgroundColor: item.isActive ? "#ef4444" : "#16a34a",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      cursor:
+                        isProcessing || !canUsePriority ? "default" : "pointer",
+                    }}
+                  >
+                    {item.isActive ? "停止する" : "再開する"}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+              決済反映（手動ワークフロー）
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={buyerNameInput}
+                onChange={(e) => setBuyerNameInput(e.target.value)}
+                placeholder="購入者名（例: たろう）"
+                style={inputStyle}
+              />
+              <button
+                onClick={() => void issuePriorityTicketForBuyer()}
+                disabled={isProcessing || !canUsePriority}
+                style={{
+                  minHeight: 40,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "none",
+                  backgroundColor: isProcessing ? "#c4b5fd" : "#7c3aed",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: "bold",
+                  cursor: isProcessing || !canUsePriority ? "default" : "pointer",
+                }}
+              >
+                購入者コード発行
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                color: "#64748b",
+                fontSize: 12,
+                lineHeight: 1.7,
+              }}
+            >
+              決済を確認したら、このボタンで即コード発行 → 案内文をコピーできます。
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontWeight: "bold" }}>直近販売ログ</div>
+              <button
+                onClick={() => void copySalesReport()}
+                disabled={!canUsePriority}
+                style={{
+                  minHeight: 34,
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  border: "none",
+                  backgroundColor: "#7c3aed",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  cursor: !canUsePriority ? "default" : "pointer",
+                  opacity: !canUsePriority ? 0.65 : 1,
+                }}
+              >
+                レポートをコピー
+              </button>
+            </div>
+
+            {redemptionLogs.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 13 }}>
+                まだ販売ログはありません。
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 6 }}>
+                {redemptionLogs.slice(0, 8).map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      borderRadius: 10,
+                      border: "1px solid #e2e8f0",
+                      backgroundColor: "#f8fafc",
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    {item.redeemedAt
+                      ? new Date(item.redeemedAt).toLocaleString("ja-JP")
+                      : "-"}{" "}
+                    / {item.viewerName} / {item.code} / ¥
+                    {item.priceYen.toLocaleString()}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              自動反映: `licenses/{user.uid}.plan` を更新するとプランへ反映されます。
+            </div>
+          </div>
+        )}
 
         <div
           style={{

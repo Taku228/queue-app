@@ -7,6 +7,7 @@ import {
   firebaseClientInitError,
   isFirebaseConfigured,
 } from "../../lib/firebase";
+import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -1044,7 +1045,7 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
-  const canUsePriority = planLimit.canUsePriority;
+  const canUsePriority = ENABLE_PRIORITY_FEATURES && planLimit.canUsePriority;
   const totalPriorityRevenue = useMemo(() => {
     return redemptionLogs.reduce((sum, item) => sum + item.priceYen, 0);
   }, [redemptionLogs]);
@@ -1447,6 +1448,40 @@ export default function HostPage() {
 
         <div
           style={{
+            backgroundColor: "#ffffff",
+            borderRadius: 14,
+            padding: "10px 12px",
+            boxShadow: "0 6px 18px rgba(0, 0, 0, 0.06)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#334155" }}>
+            設定画面を開いてプラン・料金を変更できます
+          </div>
+          <button
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            style={{
+              minHeight: 36,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: "#0f766e",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: "bold",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            {isSettingsOpen ? "設定を閉じる" : "設定を開く"}
+          </button>
+        </div>
+
+        <div
+          style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
             gap: 14,
@@ -1502,28 +1537,30 @@ export default function HostPage() {
             </div>
           </div>
 
-          <div
-            style={{
-              backgroundColor: "#f5f3ff",
-              color: "#5b21b6",
-              borderRadius: 18,
-              padding: 18,
-            }}
-          >
-            <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
-              PRIORITY SALES
+          {ENABLE_PRIORITY_FEATURES && (
+            <div
+              style={{
+                backgroundColor: "#f5f3ff",
+                color: "#5b21b6",
+                borderRadius: 18,
+                padding: 18,
+              }}
+            >
+              <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+                PRIORITY SALES
+              </div>
+              <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
+                有効コード: {activeCodeCount}件
+                <br />
+                直近販売: {totalPrioritySales}件
+                <br />
+                直近売上: ¥{totalPriorityRevenue.toLocaleString()}
+              </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: "bold", lineHeight: 1.7 }}>
-              有効コード: {activeCodeCount}件
-              <br />
-              直近販売: {totalPrioritySales}件
-              <br />
-              直近売上: ¥{totalPriorityRevenue.toLocaleString()}
-            </div>
-          </div>
+          )}
         </div>
 
-        {isSettingsOpen && (
+        {isSettingsOpen && ENABLE_PRIORITY_FEATURES && (
           <div
             style={{
               backgroundColor: "#ffffff",
@@ -1990,264 +2027,6 @@ export default function HostPage() {
             </div>
           </div>
         )}
-
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: 20,
-            padding: 18,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
-          }}
-        >
-          <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>
-            収益化: 優先参加チケット
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 10,
-              marginBottom: 10,
-            }}
-          >
-            <input
-              value={codeLabelInput}
-              onChange={(e) => setCodeLabelInput(e.target.value)}
-              placeholder="チケット名"
-              style={inputStyle}
-            />
-            <input
-              value={codePriceInput}
-              onChange={(e) => setCodePriceInput(e.target.value)}
-              inputMode="numeric"
-              placeholder="価格(円)"
-              style={inputStyle}
-            />
-            <input
-              value={codeUsesInput}
-              onChange={(e) => setCodeUsesInput(e.target.value)}
-              inputMode="numeric"
-              placeholder="利用可能回数"
-              style={inputStyle}
-            />
-          </div>
-
-          <button
-            onClick={() => void createPriorityCode()}
-            disabled={isProcessing || !canUsePriority}
-            style={{
-              minHeight: 42,
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "none",
-              backgroundColor:
-                isProcessing || !canUsePriority ? "#93c5fd" : "#2563eb",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: "bold",
-              cursor: isProcessing || !canUsePriority ? "default" : "pointer",
-            }}
-          >
-            優先コードを発行
-          </button>
-
-          {!canUsePriority && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-              無料版では優先コード機能は利用できません。Pro以上で解放されます。
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {[300, 500, 1000, 3000].map((price) => (
-              <button
-                key={price}
-                onClick={() => setCodePriceInput(String(price))}
-                style={{
-                  minHeight: 32,
-                  padding: "6px 10px",
-                  borderRadius: 9999,
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#fff",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                ¥{price}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-            {priorityCodes.length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: 14 }}>
-                まだ優先コードはありません。
-              </div>
-            ) : (
-              priorityCodes.map((item) => (
-                <div
-                  key={item.code}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    padding: 12,
-                    backgroundColor: "#f8fafc",
-                  }}
-                >
-                  <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                    {item.code} / {item.label}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.7 }}>
-                    価格: ¥{item.priceYen.toLocaleString()} / 残り利用回数:{" "}
-                    {item.remainingUses} / 使用回数: {item.redeemedCount}
-                  </div>
-                  <button
-                    onClick={() => void togglePriorityCode(item.code, !item.isActive)}
-                    disabled={isProcessing || !canUsePriority}
-                    style={{
-                      marginTop: 8,
-                      minHeight: 34,
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      border: "none",
-                      backgroundColor: item.isActive ? "#ef4444" : "#16a34a",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: "bold",
-                      cursor:
-                        isProcessing || !canUsePriority ? "default" : "pointer",
-                    }}
-                  >
-                    {item.isActive ? "停止する" : "再開する"}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              borderTop: "1px solid #e2e8f0",
-              paddingTop: 12,
-            }}
-          >
-            <div style={{ fontWeight: "bold", marginBottom: 8 }}>
-              決済反映（手動ワークフロー）
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 8,
-                alignItems: "center",
-              }}
-            >
-              <input
-                value={buyerNameInput}
-                onChange={(e) => setBuyerNameInput(e.target.value)}
-                placeholder="購入者名（例: たろう）"
-                style={inputStyle}
-              />
-              <button
-                onClick={() => void issuePriorityTicketForBuyer()}
-                disabled={isProcessing || !canUsePriority}
-                style={{
-                  minHeight: 40,
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "none",
-                  backgroundColor: isProcessing ? "#c4b5fd" : "#7c3aed",
-                  color: "#fff",
-                  fontSize: 13,
-                  fontWeight: "bold",
-                  cursor: isProcessing || !canUsePriority ? "default" : "pointer",
-                }}
-              >
-                購入者コード発行
-              </button>
-            </div>
-
-            <div
-              style={{
-                marginTop: 8,
-                color: "#64748b",
-                fontSize: 12,
-                lineHeight: 1.7,
-              }}
-            >
-              決済を確認したら、このボタンで即コード発行 → 案内文をコピーできます。
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              borderTop: "1px solid #e2e8f0",
-              paddingTop: 12,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ fontWeight: "bold" }}>直近販売ログ</div>
-              <button
-                onClick={() => void copySalesReport()}
-                disabled={!canUsePriority}
-                style={{
-                  minHeight: 34,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  backgroundColor: "#7c3aed",
-                  color: "#fff",
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  cursor: !canUsePriority ? "default" : "pointer",
-                  opacity: !canUsePriority ? 0.65 : 1,
-                }}
-              >
-                レポートをコピー
-              </button>
-            </div>
-
-            {redemptionLogs.length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: 13 }}>
-                まだ販売ログはありません。
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 6 }}>
-                {redemptionLogs.slice(0, 8).map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      borderRadius: 10,
-                      border: "1px solid #e2e8f0",
-                      backgroundColor: "#f8fafc",
-                      padding: "8px 10px",
-                      fontSize: 12,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    {item.redeemedAt
-                      ? new Date(item.redeemedAt).toLocaleString("ja-JP")
-                      : "-"}{" "}
-                    / {item.viewerName} / {item.code} / ¥
-                    {item.priceYen.toLocaleString()}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
         <div
           style={{

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
+import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   addDoc,
   collection,
@@ -277,7 +278,7 @@ export default function ViewerPage() {
 
   const myNextSessionBattle = myCurrentSessionBattles + 1;
   const myNextTotalBattle = myTotalBattles + 1;
-  const canUsePriority = plan !== "free";
+  const canUsePriority = ENABLE_PRIORITY_FEATURES && plan !== "free";
 
   const isInputLocked = isSubmitting || isMyTurnNow;
   const isJoinButtonDisabled = isSubmitting || isMyTurnNow;
@@ -800,8 +801,12 @@ export default function ViewerPage() {
               padding: "10px 12px",
             }}
           >
-            優先コードは配信者から購入した方のみ利用できます。
-            <br />
+            {ENABLE_PRIORITY_FEATURES && (
+              <>
+                優先コードは配信者から購入した方のみ利用できます。
+                <br />
+              </>
+            )}
             安全運用のため、待機列からの削除は配信者側で行います。
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
+import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   collection,
   doc,
@@ -138,7 +139,8 @@ export default function OverlayPage() {
     if (queue.length === 0) return "待機なし";
     return queue[0].name || "待機なし";
   }, [queue]);
-  const nextPlayerIsPriority = queue[0]?.entryType === "priority";
+  const nextPlayerIsPriority =
+    ENABLE_PRIORITY_FEATURES && queue[0]?.entryType === "priority";
 
   const waitingCount = queue.length;
 

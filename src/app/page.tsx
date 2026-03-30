@@ -217,13 +217,13 @@ export default function HomePage() {
           }}
         >
           <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 6 }}>
-            収益化モード（NEW）
+            プラン管理
           </div>
           <div style={{ fontSize: 13, color: "#155e75", lineHeight: 1.7 }}>
-            host 画面で「優先参加チケット」を発行できます。視聴者がコードを入力すると、
-            PRIORITY として待機列の先頭側に並ぶ仕組みです。
+            host 画面の「設定を開く」から、無料版 / Pro / Business の
+            切り替えができます。
             <br />
-            例：メンバーシップ特典 / 投げ銭返礼 / スポンサー向け優先枠
+            無料版でも参加列管理はそのまま利用できます。
           </div>
         </div>
 

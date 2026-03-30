@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isHost() {
+      return request.auth != null
+        && request.auth.uid == "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
+    }
+
+    // 視聴者の待機列
+    match /queue/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.name is string
+        && request.resource.data.createdAt is number;
+      allow update, delete: if isHost();
+    }
+
+    // 配信設定
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isHost();
+    }
+
+    // 現在のプレイ中ステータス
+    match /status/{docId} {
+      allow read: if true;
+      allow write: if isHost();
+    }
+
+    // 通算対戦数
+    match /playerStats/{docId} {
+      allow read: if true;
+      allow write: if isHost();
+    }
+
+    // 優先コード
+    match /priorityCodes/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isHost();
+    }
+
+    // 優先コード利用ログ
+    match /priorityCodeRedemptions/{docId} {
+      allow read: if isHost();
+      allow create: if true;
+      allow update, delete: if isHost();
+    }
+  }
+}

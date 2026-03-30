@@ -109,8 +109,7 @@ export default function ViewerPage() {
               id: docItem.id,
               name: typeof raw.name === "string" ? raw.name : "",
               createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-              participantToken:
-                typeof raw.participantToken === "string" ? raw.participantToken : "",
+              participantToken: typeof raw.participantToken === "string" ? raw.participantToken : "",
             };
           })
           .sort((a, b) => a.createdAt - b.createdAt);

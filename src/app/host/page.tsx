@@ -168,8 +168,7 @@ export default function HostPage() {
               id: docItem.id,
               name: typeof raw.name === "string" ? raw.name : "",
               createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-              participantToken:
-                typeof raw.participantToken === "string" ? raw.participantToken : "",
+              participantToken: typeof raw.participantToken === "string" ? raw.participantToken : "",
             };
           })
           .sort((a, b) => a.createdAt - b.createdAt);
@@ -993,7 +992,6 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
-  const canUsePriority = ENABLE_PRIORITY_FEATURES && planLimit.canUsePriority;
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;

@@ -14,8 +14,9 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
-  priorityScore: number;
-  entryType: "normal" | "priority";
+  priorityScore?: number;
+  entryType?: "normal" | "priority";
+  redeemedCode?: string;
 };
 
 type ActivePlayer = {

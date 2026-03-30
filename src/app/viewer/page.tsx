@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { db } from "../../lib/firebase";
+import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
 import {
   addDoc,
   collection,
@@ -10,12 +10,15 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
 } from "firebase/firestore";
 
 type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  priorityScore: number;
+  entryType: "normal" | "priority";
 };
 
 type ActivePlayer = {
@@ -52,6 +55,7 @@ export default function ViewerPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>("info");
   const [myName, setMyName] = useState("");
+  const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,26 +66,45 @@ export default function ViewerPage() {
   };
 
   useEffect(() => {
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
     const savedName = localStorage.getItem("queue_my_name");
     if (savedName) {
       setMyName(savedName);
       setName(savedName);
     }
 
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              priorityScore:
+                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+              entryType: (raw.entryType === "priority"
+                ? "priority"
+                : "normal") as "normal" | "priority",
+            };
+          })
+          .sort((a, b) => {
+            if (b.priorityScore !== a.priorityScore) {
+              return b.priorityScore - a.priorityScore;
+            }
+            return a.createdAt - b.createdAt;
+          });
 
         setQueue(data);
       },
@@ -296,21 +319,89 @@ export default function ViewerPage() {
         return;
       }
 
+      let isPriorityEntry = false;
+      let redeemedCode = "";
+      let priorityPriceYen = 0;
+
+      if (supportCode.trim()) {
+        setStatusMessage("優先コード確認中...", "info");
+        const normalizedCode = supportCode.trim().toUpperCase();
+
+        await runTransaction(db, async (transaction) => {
+          const codeRef = doc(db, "priorityCodes", normalizedCode);
+          const codeSnap = await transaction.get(codeRef);
+
+          if (!codeSnap.exists()) {
+            throw new Error("優先コードが見つかりません。");
+          }
+
+          const codeData = codeSnap.data();
+          const isActive = codeData.isActive !== false;
+          const remainingUses =
+            typeof codeData.remainingUses === "number"
+              ? codeData.remainingUses
+              : 0;
+          const priceYen =
+            typeof codeData.priceYen === "number" ? codeData.priceYen : 0;
+
+          if (!isActive || remainingUses <= 0) {
+            throw new Error("優先コードは利用上限に達しています。");
+          }
+
+          transaction.update(codeRef, {
+            remainingUses: remainingUses - 1,
+            redeemedCount:
+              typeof codeData.redeemedCount === "number"
+                ? codeData.redeemedCount + 1
+                : 1,
+            updatedAt: Date.now(),
+          });
+
+          priorityPriceYen = priceYen;
+        });
+
+        isPriorityEntry = true;
+        redeemedCode = normalizedCode;
+      }
+
       setStatusMessage("参加登録中...", "info");
 
       await addDoc(collection(db, "queue"), {
         name: trimmedName,
         createdAt: Date.now(),
+        priorityScore: isPriorityEntry ? 1 : 0,
+        entryType: isPriorityEntry ? "priority" : "normal",
+        redeemedCode,
       });
+
+      if (isPriorityEntry) {
+        await addDoc(collection(db, "priorityCodeRedemptions"), {
+          code: redeemedCode,
+          viewerName: trimmedName,
+          priceYen: priorityPriceYen,
+          redeemedAt: Date.now(),
+        });
+      }
 
       setMyName(trimmedName);
       localStorage.setItem("queue_my_name", trimmedName);
       setName(trimmedName);
-      setStatusMessage("参加しました。", "success");
+      setSupportCode("");
+      setStatusMessage(
+        isPriorityEntry ? "優先参加で登録しました。" : "参加しました。",
+        "success"
+      );
     } catch (error) {
       console.error(error);
 
       if (error instanceof Error) {
+        if (error.message.includes("permission-denied")) {
+          setStatusMessage(
+            "権限エラーです。Firestoreルールで queue への追加許可が必要です。",
+            "error"
+          );
+          return;
+        }
         setStatusMessage(`エラー: ${error.message}`, "error");
       } else {
         setStatusMessage("参加処理でエラーが発生しました。", "error");
@@ -362,6 +453,45 @@ export default function ViewerPage() {
           backgroundColor: "#fef3c7",
           color: "#92400e",
         };
+
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background:
+            "linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #ffffff 100%)",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 680,
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 24,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+          }}
+        >
+          <h1 style={{ fontSize: 26, margin: "0 0 8px 0" }}>
+            現在セットアップ中です
+          </h1>
+          <p style={{ color: "#475569", lineHeight: 1.8, margin: 0 }}>
+            配信者が Firebase 設定を完了すると、ここから参加できるようになります。
+            {firebaseClientInitError ? (
+              <>
+                <br />
+                初期化エラー: {firebaseClientInitError}
+              </>
+            ) : null}
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -553,6 +683,24 @@ export default function ViewerPage() {
               }}
             />
 
+            <input
+              value={supportCode}
+              onChange={(e) => setSupportCode(e.target.value)}
+              placeholder="優先コード（任意） 例: VIP-AB12"
+              autoCapitalize="characters"
+              disabled={isInputLocked}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                fontSize: 15,
+                boxSizing: "border-box",
+                backgroundColor: isInputLocked ? "#e2e8f0" : "#ffffff",
+                color: isInputLocked ? "#64748b" : "#0f172a",
+              }}
+            />
+
             <button
               onClick={() => void joinQueue()}
               disabled={isJoinButtonDisabled}
@@ -607,6 +755,8 @@ export default function ViewerPage() {
               padding: "10px 12px",
             }}
           >
+            優先コードは配信者から購入した方のみ利用できます。
+            <br />
             安全運用のため、待機列からの削除は配信者側で行います。
           </div>
         </div>
@@ -763,6 +913,21 @@ export default function ViewerPage() {
                         }}
                       >
                         {index + 1}：{user.name}
+                        {user.entryType === "priority" && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              fontSize: 11,
+                              padding: "3px 8px",
+                              borderRadius: 9999,
+                              backgroundColor: "#fef3c7",
+                              color: "#92400e",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            PRIORITY
+                          </span>
+                        )}
                       </div>
 
                       {isMe && (

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { db } from "../../lib/firebase";
+import { db, firebaseClientInitError, isFirebaseConfigured } from "../../lib/firebase";
+import { ENABLE_PRIORITY_FEATURES } from "../../lib/features";
 import {
   collection,
   doc,
@@ -14,6 +15,8 @@ type QueueUser = {
   id: string;
   name: string;
   createdAt: number;
+  priorityScore: number;
+  entryType: "normal" | "priority";
 };
 
 type ActivePlayer = {
@@ -32,20 +35,39 @@ export default function OverlayPage() {
   );
 
   useEffect(() => {
-    const queueQuery = query(collection(db, "queue"), orderBy("createdAt"));
+    if (!isFirebaseConfigured || firebaseClientInitError) {
+      return;
+    }
+
+    const queueQuery = query(
+      collection(db, "queue"),
+      orderBy("createdAt")
+    );
 
     const unsubscribeQueue = onSnapshot(
       queueQuery,
       (snapshot) => {
-        const data = snapshot.docs.map((docItem) => {
-          const raw = docItem.data();
+        const data = snapshot.docs
+          .map((docItem) => {
+            const raw = docItem.data();
 
-          return {
-            id: docItem.id,
-            name: typeof raw.name === "string" ? raw.name : "",
-            createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
-          };
-        });
+            return {
+              id: docItem.id,
+              name: typeof raw.name === "string" ? raw.name : "",
+              createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+              priorityScore:
+                typeof raw.priorityScore === "number" ? raw.priorityScore : 0,
+              entryType: (raw.entryType === "priority"
+                ? "priority"
+                : "normal") as "normal" | "priority",
+            };
+          })
+          .sort((a, b) => {
+            if (b.priorityScore !== a.priorityScore) {
+              return b.priorityScore - a.priorityScore;
+            }
+            return a.createdAt - b.createdAt;
+          });
 
         setQueue(data);
       },
@@ -117,6 +139,8 @@ export default function OverlayPage() {
     if (queue.length === 0) return "待機なし";
     return queue[0].name || "待機なし";
   }, [queue]);
+  const nextPlayerIsPriority =
+    ENABLE_PRIORITY_FEATURES && queue[0]?.entryType === "priority";
 
   const waitingCount = queue.length;
 
@@ -139,6 +163,26 @@ export default function OverlayPage() {
       };
     });
   }, [activePlayers, playerStatsMap]);
+
+  if (!isFirebaseConfigured || !!firebaseClientInitError) {
+    return (
+      <main
+        style={{
+          width: "100vw",
+          height: "100vh",
+          display: "grid",
+          placeItems: "center",
+          color: "#fff",
+          background: "rgba(15, 23, 42, 0.82)",
+          fontSize: 24,
+          fontWeight: 700,
+        }}
+      >
+        Firebase設定待ち
+        {firebaseClientInitError ? ` / ${firebaseClientInitError}` : ""}
+      </main>
+    );
+  }
 
   return (
     <main
@@ -308,6 +352,22 @@ export default function OverlayPage() {
                 >
                   {nextPlayerName}
                 </div>
+                {nextPlayerIsPriority && (
+                  <div
+                    style={{
+                      display: "inline-block",
+                      marginTop: 8,
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "#92400e",
+                      background: "#fef3c7",
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                    }}
+                  >
+                    PRIORITY TICKET
+                  </div>
+                )}
               </div>
 
               <div

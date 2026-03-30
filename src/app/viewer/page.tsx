@@ -69,6 +69,10 @@ export default function ViewerPage() {
   const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [participantToken, setParticipantToken] = useState("");
+  // Backward-compatible plan state for partially merged branches that still reference setPlan.
+  const [plan, setPlan] = useState<PlanType>("free");
+  const planCompatBindings = { plan, setPlan };
+  void planCompatBindings;
 
   const inputRef = useRef<HTMLInputElement>(null);
 

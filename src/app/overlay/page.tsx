@@ -35,9 +35,6 @@ const DEFAULT_OVERLAY_THEME: OverlayTheme = {
   cardText: "#ffffff",
 };
 
-// Backward-compatibility flag for partially merged branches that still reference this symbol.
-const ENABLE_PRIORITY_FEATURES = false;
-
 const normalizeName = (name: string) => name.trim().toLowerCase();
 
 export default function OverlayPage() {

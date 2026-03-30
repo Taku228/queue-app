@@ -32,9 +32,6 @@ type QueueUser = {
   name: string;
   createdAt: number;
   participantToken?: string;
-  priorityScore?: number;
-  entryType?: "normal" | "priority";
-  redeemedCode?: string;
 };
 
 type ActivePlayer = {
@@ -137,22 +134,6 @@ export default function HostPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [overlayTheme, setOverlayTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME);
   const [isSavingOverlayTheme, setIsSavingOverlayTheme] = useState(false);
-  // Backward-compatible bindings for partially merged branches that still reference priority handlers.
-  const [codeLabelInput, setCodeLabelInput] = useState("優先参加チケット");
-  const [codePriceInput, setCodePriceInput] = useState("500");
-  const [codeUsesInput, setCodeUsesInput] = useState("1");
-  const [buyerNameInput, setBuyerNameInput] = useState("");
-  const priorityCompatBindings = {
-    codeLabelInput,
-    setCodeLabelInput,
-    codePriceInput,
-    setCodePriceInput,
-    codeUsesInput,
-    setCodeUsesInput,
-    buyerNameInput,
-    setBuyerNameInput,
-  };
-  void priorityCompatBindings;
 
   const hostUid =
     process.env.NEXT_PUBLIC_HOST_UID ?? "Ns5kRjvsbfZQnNoSUTiQ68L3DNV2";
@@ -1011,7 +992,6 @@ export default function HostPage() {
     return `${activePlayers.length} / ${settings.maxActivePlayers} 人`;
   }, [activePlayers.length, settings.maxActivePlayers]);
   const planLimit = PLAN_LIMITS[subscription.plan];
-  const canUsePriority = subscription.plan !== "free";
 
   const savePlan = async (plan: PlanType) => {
     if (!isHost || isSavingPlan) return;
@@ -1556,8 +1536,7 @@ export default function HostPage() {
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
               現在プラン: {PLAN_LIMITS[subscription.plan].label} / 同時参加上限:{" "}
-              {planLimit.maxActivePlayers} 人 / 優先コード想定:{" "}
-              {canUsePriority ? "有料プラン" : "無料プラン"}
+              {planLimit.maxActivePlayers} 人
             </div>
           </div>
 

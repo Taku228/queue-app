@@ -18,9 +18,6 @@ type QueueUser = {
   name: string;
   createdAt: number;
   participantToken: string;
-  priorityScore?: number;
-  entryType?: "normal" | "priority";
-  redeemedCode?: string;
 };
 
 type ActivePlayer = {
@@ -47,8 +44,6 @@ const getPlayerStatsId = (name: string) =>
 
 const normalizeName = (name: string) => name.trim().toLowerCase();
 const PARTICIPANT_TOKEN_KEY = "queue_participant_token";
-// Backward-compatibility flag for partially merged branches that still reference this symbol.
-const ENABLE_PRIORITY_FEATURES = false;
 
 const generateParticipantToken = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -71,10 +66,6 @@ export default function ViewerPage() {
   const [supportCode, setSupportCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [participantToken, setParticipantToken] = useState("");
-  // Backward-compatible plan state for partially merged branches that still reference setPlan.
-  const [plan, setPlan] = useState<PlanType>("free");
-  const planCompatBindings = { plan, setPlan, ENABLE_PRIORITY_FEATURES };
-  void planCompatBindings;
 
   const inputRef = useRef<HTMLInputElement>(null);
 
